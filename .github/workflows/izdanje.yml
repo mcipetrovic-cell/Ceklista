@@ -1,0 +1,78 @@
+# Прави Ceklista.exe на Windows-у и поставља га на страницу Releases (ознака v<верзија>) кад се на main промени
+# VERZIJA_BROJ у ceklista/__init__.py. Ако издање те верзије већ постоји, не ради ништа (ново издање = нов број).
+name: Izdanje (Ceklista.exe)
+
+on:
+  push:
+    branches: [main]
+    paths: ["ceklista/__init__.py", ".github/workflows/izdanje.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Alati (samo za izradu i probe; program nema dodatnih biblioteka)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pytest
+
+      - name: Verzija
+        id: v
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = python -c "import ceklista; print(ceklista.VERZIJA_BROJ)"
+          "verzija=$v" >> $env:GITHUB_OUTPUT
+          gh release view "v$v" --repo "$env:GITHUB_REPOSITORY" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Izdanje v$v vec postoji - za novo izdanje povecajte VERZIJA_BROJ."
+            "postoji=true" >> $env:GITHUB_OUTPUT
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Kontrola pre izdanja (verzija u CHANGELOG-u, bez ličnih podataka i baza u Git-u)
+        if: steps.v.outputs.postoji != 'true'
+        run: python scripts/provera_pre_izdanja.py
+
+      - name: Probe
+        if: steps.v.outputs.postoji != 'true'
+        run: python -m pytest -q tests
+
+      - name: PyInstaller
+        if: steps.v.outputs.postoji != 'true'
+        run: pyinstaller --noconfirm Ceklista.spec
+
+      - name: Samoprovera Ceklista.exe
+        if: steps.v.outputs.postoji != 'true'
+        shell: pwsh
+        run: |
+          $izlaz = Join-Path $env:RUNNER_TEMP 'provera.txt'
+          $p = Start-Process dist\Ceklista.exe -ArgumentList '--provera', $izlaz -Wait -PassThru
+          Get-Content $izlaz
+          if ($p.ExitCode -ne 0) { throw "Samoprovera nije prosla" }
+
+      - name: Releases
+        if: steps.v.outputs.postoji != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.verzija }}
+          target_commitish: ${{ github.sha }}
+          name: Чек-листа ${{ steps.v.outputs.verzija }}
+          body: |
+            Преузмите **Ceklista.exe** (испод, „Assets“) и покрените га двокликом — инсталација није потребна.
+            Ако Windows прикаже „Windows је заштитио рачунар“: „Више информација“ → „Ипак покрени“.
+            Упутство: README.md. Измене: CHANGELOG.md.
+
+            Чек-листа · © 2026 Slavia Brothers, Geneva. All rights reserved.
+          files: dist/Ceklista.exe

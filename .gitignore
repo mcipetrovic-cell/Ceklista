@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+build/
+dist/
+.venv/
+.pytest_cache/
+*.ceklista
+*.docx
+*.db
+*.har

@@ -1,0 +1,39 @@
+# Пробе на Windows-у за сваку грану осим main (main проверава izdanje.yml пре издања), и пробно прављење
+# Ceklista.exe са самопровером — исправка се види пре него што постане издање.
+name: Probe
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Alati
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pytest
+      - name: Kontrola (bez ličnih podataka i baza u Git-u)
+        run: python scripts/provera_pre_izdanja.py
+      - name: Probe
+        run: python -m pytest -q tests
+      - name: Probno pravljenje Ceklista.exe i samoprovera
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm Ceklista.spec
+          $izlaz = Join-Path $env:RUNNER_TEMP 'provera.txt'
+          $p = Start-Process dist\Ceklista.exe -ArgumentList '--provera', $izlaz -Wait -PassThru
+          Get-Content $izlaz
+          if ($p.ExitCode -ne 0) { throw "Samoprovera nije prosla" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ceklista-proba
+          path: dist/Ceklista.exe
+          retention-days: 7
