@@ -214,7 +214,8 @@ def nov_list(c: dict | None = None) -> dict:
     t = sada()
     for k, v in list23.PREDEFINISANO.items():
         c["odgovori"][k] = v
-        c["trag"][k] = {"vreme": t, "nacin": "predefinisano", "ime": "", "poreklo": "podrazumevano"}
+        if k != "posao":  # правни посао није одговор на питање (као у Сави)
+            c["trag"][k] = {"vreme": t, "nacin": "predefinisano", "ime": "", "poreklo": "podrazumevano"}
     return c
 
 
@@ -836,8 +837,8 @@ def kontrola(c: dict) -> dict:
 
 def potvrdi(c: dict, k: str, spisak: list | None = None) -> dict:
     """Параф са именом и временом (cek_lista.potvrdi). „primio“ групно потврђује виђени списак предлога; „spremno“
-    само кад КОНТРОЛА нема ни црвених заставица ни недостатака; „spakovan“ не ако списи нису сложени. Параф се не
-    поништава (остаје име и време првог)."""
+    само кад КОНТРОЛА нема ни црвених заставица ни недостатака; „spakovan“ не ако списи нису сложени. Поновна потврда
+    враћа први параф (име и време првог); параф се поништава само изричито (ponisti_potvrdu)."""
     _u_radu(c)
     if k not in P.POTVRDE:
         raise GreskaUnosa("Непознат параф.")
@@ -858,6 +859,15 @@ def potvrdi(c: dict, k: str, spisak: list | None = None) -> dict:
     c.setdefault("potvrde", {})[k] = {"ime": ime, "vreme": sada()}
     _izmenjeno(c)
     return c["potvrde"][k]
+
+
+def ponisti_potvrdu(c: dict, k: str) -> None:
+    """Поништава параф (налог 27.11.2026: парафира се кликом без питања, па се грешка исправља поновним кликом)."""
+    _u_radu(c)
+    if k not in P.POTVRDE:
+        raise GreskaUnosa("Непознат параф.")
+    if (c.get("potvrde") or {}).pop(k, None) is not None:
+        _izmenjeno(c)
 
 
 def zavrsi(c: dict) -> None:

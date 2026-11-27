@@ -73,9 +73,9 @@ class Pomicno(ttk.Frame):
         self.platno.configure(yscrollcommand=self.klizac.set)
         self.klizac.pack(side="right", fill="y")
         self.platno.pack(side="left", fill="both", expand=True)
-        self.unutra = ttk.Frame(self.platno, style="Pozadina.TFrame")
+        self.unutra = self._nov_okvir()
+        self._stari = None
         self._prozor = self.platno.create_window(0, 0, anchor="nw", window=self.unutra)
-        self.unutra.bind("<Configure>", lambda e: self.platno.configure(scrollregion=self.platno.bbox("all")))
         self.platno.bind("<Configure>", self._sirina)
         self.bind_all("<MouseWheel>", self._tocak, add="+")
         self.bind_all("<Button-4>", self._tocak, add="+")
@@ -109,9 +109,22 @@ class Pomicno(ttk.Frame):
             korak = -int(e.delta / 120) * 3 if abs(e.delta) >= 120 else (-1 if e.delta > 0 else 1)
         self.platno.yview_scroll(korak, "units")
 
-    def ocisti(self):
-        for w in self.unutra.winfo_children():
-            w.destroy()
+    def _nov_okvir(self) -> ttk.Frame:
+        okvir = ttk.Frame(self.platno, style="Pozadina.TFrame")
+        okvir.bind("<Configure>", lambda e: self.platno.configure(scrollregion=self.platno.bbox("all")))
+        return okvir
+
+    def pocni(self):
+        """Нова страна се гради у новом оквиру ван екрана; стара остаје видљива до замене (без трептања)."""
+        self._stari = self.unutra
+        self.unutra = self._nov_okvir()
+
+    def zameni(self, polozaj: float):
+        self.platno.itemconfigure(self._prozor, window=self.unutra)
+        if self._stari is not None:
+            self._stari.destroy()
+            self._stari = None
+        self.vrati(polozaj)
 
     def polozaj(self) -> float:
         return self.platno.yview()[0]
@@ -139,6 +152,8 @@ class Aplikacija:
         self._drzi: list = []
         self._polja: dict[str, tk.Widget] = {}  # ознака питања → поље за унос текста (за пробе и фокус)
         self._celije: dict[tuple, tk.Label] = {}  # (кључ, вредност) → ћелија КОНТРОЛЕ на листу
+        self._osvezivaci: list = []  # освежавање делова листа без поновног исцртавања
+        self._cipovi_brojaca: dict = {}
         self._stil()
         ttk.Label(koren, text=f"ЧЕК-ЛИСТА · верзија {VERZIJA_BROJ} · {POTPIS}", style="Podnozje.TLabel",
                   anchor="w", padding=(14, 3)).pack(side="bottom", fill="x")
@@ -264,7 +279,7 @@ class Aplikacija:
             ishod = fn(*args, **kwargs)
         except L.GreskaUnosa as e:
             messagebox.showwarning(NAZIV, str(e), parent=self.koren)
-            self.osvezi(sve=True)
+            self.osvezi(sve=self.izbor != LIST)
             return None
         self.sacuvaj()
         self.osvezi()
@@ -387,12 +402,14 @@ class Aplikacija:
         self._prikazi(sve, vrh)
 
     def _osvezi_brojace(self):
-        for w in self.brojaci.winfo_children():
-            w.destroy()
+        """Бројачи доле: ознаке се праве једном, после се мења само број (без трептања)."""
         for k, naziv in L.STATUSI.items():
-            poz, boja = BOJE_STATUSA[k]
-            tk.Label(self.brojaci, text=f" {naziv} {self.st['brojaci'][k]} ", background=poz, foreground=boja,
-                     font=self.f["mali"], padx=4, pady=2).pack(side="left", padx=(0, 6))
+            if k not in self._cipovi_brojaca:
+                poz, boja = BOJE_STATUSA[k]
+                self._cipovi_brojaca[k] = tk.Label(self.brojaci, background=poz, foreground=boja, font=self.f["mali"],
+                                                   padx=4, pady=2)
+                self._cipovi_brojaca[k].pack(side="left", padx=(0, 6))
+            self._cipovi_brojaca[k].configure(text=f" {naziv} {self.st['brojaci'][k]} ")
 
     def _otvoreno_u(self, oid: str) -> int:
         return sum(1 for s in self.st["sve"] if s["odeljak"] == oid and s["primenljivost"] in ("da", "nepoznato")
@@ -431,10 +448,7 @@ class Aplikacija:
         """Шта одређује изглед стране: ако се не промени, освежавају се само ознаке статуса (поље у коме се куца
         остаје, клик на друго питање не губи се)."""
         if self.izbor == LIST:
-            odg = self.c.get("odgovori") or {}
-            return (LIST, self.st["samo_citanje"], repr(self.st["potvrde"]),
-                    tuple(sorted((k, repr(v)) for k, v in odg.items() if k not in TEKST_LISTA)),
-                    tuple(s["primenljivost"] for s in self.st["sve"] if s["sid"] == ""))
+            return (LIST, self.st["samo_citanje"])  # остало освежавају делови листа сами (без трептања)
         if self.izbor in (LICA, POTVRDE, SAZETAK):
             lica = tuple((x["id"], x["svojstvo"], x["strana"], x["pravno_lice"]) for x in self.st["lica"])
             return (self.izbor, lica, self.st["posao"], repr(self.st["potvrde"]), self.st["samo_citanje"],
@@ -450,6 +464,8 @@ class Aplikacija:
     def _prikazi(self, sve: bool = False, vrh: bool = False):
         potpis = self._potpis()
         if not sve and potpis == self._potpis_strane:
+            for osvezi in self._osvezivaci:
+                osvezi()
             for oznaka, cip in self._cipovi.items():
                 s = L.nadji(self.st, oznaka)
                 if s:
@@ -457,7 +473,7 @@ class Aplikacija:
             return
         polozaj = 0.0 if vrh else self.sadrzaj.polozaj()
         self._potpis_strane = potpis
-        self.sadrzaj.ocisti()
+        self.sadrzaj.pocni()
         self._cipovi.clear()
         self._omotani.clear()
         self._potvrde_polja.clear()
@@ -465,6 +481,7 @@ class Aplikacija:
         self._drzi.clear()
         self._polja.clear()
         self._celije.clear()
+        self._osvezivaci.clear()
         if self.izbor == LIST:
             self.levo.pack_forget()  # лист заузима целу ширину, као на папиру
         elif not self.levo.winfo_ismapped():
@@ -479,7 +496,7 @@ class Aplikacija:
             self._strana_sazetka()
         else:
             self._strana_odeljka(self.izbor)
-        self.sadrzaj.vrati(polozaj)
+        self.sadrzaj.zameni(polozaj)
 
     def _sirina_teksta(self) -> int:
         return max(360, self.sadrzaj.platno.winfo_width() - 90)
@@ -512,7 +529,6 @@ class Aplikacija:
         papir.pack(anchor="n", pady=(0, 16))
         self._papir = papir
         B, F = "white", self.f
-        odg = self.c.get("odgovori") or {}
 
         def red(pady=(0, 10)):
             r = tk.Frame(papir, background=B)
@@ -553,13 +569,10 @@ class Aplikacija:
         self._linija(r, "telefon", 20)
         # 4. Правни посао
         r = red((6, 10))
-        posao = odg.get("posao") or ""
         for naziv, vrednost in list23.POSLOVI_NA_LISTU:
-            self._kucica(r, naziv, posao == vrednost, lambda v=vrednost: self._posao_sa_lista(v))
+            self._kucica(r, naziv, lambda v=vrednost: self._vrednost("posao") == v, lambda v=vrednost: self._posao_sa_lista(v))
         tekst(r, "   Друго:")
-        pocetno = odg.get("posao_drugo") or (posao if posao and posao not in dict(list23.POSLOVI_NA_LISTU).values()
-                                             and posao != "друго" else "")
-        e = self._linija(r, "posao_drugo", 30, "нпр. размена", pocetno=pocetno, upis=self._posao_drugo)
+        e = self._linija(r, "posao_drugo", 30, "нпр. размена", vrednost=self._posao_drugo_tekst, upis=self._posao_drugo)
         e.pack_configure(fill="x", expand=True)
         # 5. ЛК (ставка „Дате су им пор. пријаве“ уклоњена — налог 27.11.2026)
         r = red()
@@ -594,6 +607,7 @@ class Aplikacija:
         r = red((0, 6))
         tekst(r, "Цена")
         self._linija(r, "cena", 18, "нпр. 85.000")
+        self._valuta(r)
         r = red((0, 6))
         tekst(r, "Да ли ће купац на дан закључења уговора у потпуности измирити обавезу исплате кппр. цене?  ")
         self._grupa(r, "cena_isplacena", (("Да", "да"), ("Не", "не")))
@@ -648,80 +662,152 @@ class Aplikacija:
             self._paraf_celija(vazno, k).grid(row=1, column=j, sticky="nsew")
 
     # ---- делови листа
+    # Лист се НЕ исцртава поново после клика (налог 27.11.2026: „апликација трепне“): сваки део листа има функцију
+    # освежавања (self._osvezivaci) која из важећег стања мења само изглед — ☐/☑, сиво, текст парафа.
+    def _vrednost(self, kljuc: str):
+        return (self.c.get("odgovori") or {}).get(kljuc)
+
     def _omoguceno(self, kljuc: str) -> bool:
         s = L.nadji(self.st, kljuc)
         return not self.st["samo_citanje"] and (s is None or s["primenljivost"] != "ne")
 
-    def _kucica(self, roditelj, natpis: str, ukljuceno: bool, komanda, omoguceno: bool = True):
-        boja = "#111111" if omoguceno else "#b0b0b0"
-        okvir = tk.Frame(roditelj, background="white", cursor="hand2" if omoguceno else "")
+    def _u_radu_je(self) -> bool:
+        return not self.st["samo_citanje"]
+
+    def _kucica(self, roditelj, natpis: str, ukljuceno, komanda, omoguceno=None, dodatak=None):
+        """Кућица листа. ukljuceno, omoguceno, dodatak (текст десно, нпр. параф) су функције — читају се при сваком
+        освежавању, а komanda при клику (увек из важећег стања)."""
+        omoguceno = omoguceno or self._u_radu_je
+        okvir = tk.Frame(roditelj, background="white")
         okvir.pack(side="left", padx=(0, 14))
-        k = tk.Label(okvir, text="☑" if ukljuceno else "☐", background="white", foreground="#1f3a8a" if ukljuceno else boja,
-                     font=(self.f["osnovni"][0], 17))
+        k = tk.Label(okvir, background="white", font=(self.f["osnovni"][0], 17))
         k.pack(side="left")
-        n = tk.Label(okvir, text=natpis, background="white", foreground=boja, font=self.f["osnovni"])
+        n = tk.Label(okvir, text=natpis, background="white", font=self.f["osnovni"])
         n.pack(side="left", padx=(2, 0))
-        if omoguceno:
+        d = tk.Label(okvir, background="white", foreground="#2f6b3d", font=self.f["mali"]) if dodatak else None
+
+        def osvezi():
+            uk, om = ukljuceno(), omoguceno()
+            boja = "#111111" if om else "#b0b0b0"
+            k.configure(text="☑" if uk else "☐", foreground="#1f3a8a" if uk else boja)
+            n.configure(foreground=boja)
             for w in (okvir, k, n):
-                w.bind("<Button-1>", lambda _e: komanda())
+                w.configure(cursor="hand2" if om else "")
+            if d is not None:
+                t = dodatak()
+                d.configure(text="  " + t if t else "")
+                if t and not d.winfo_ismapped():
+                    d.pack(side="left")
+                elif not t:
+                    d.pack_forget()
+
+        def klik(_e=None):
+            if omoguceno():
+                komanda()
+
+        for w in (okvir, k, n):
+            w.bind("<Button-1>", klik)
         okvir.kucica = k
+        osvezi()
+        self._osvezivaci.append(osvezi)
         return okvir
 
     def _kucica_kljuc(self, roditelj, kljuc: str, natpis: str, vrednost: str):
         """Кућица за једно питање: означена — вредност; поново клик — питање без одговора."""
-        tren = (self.c.get("odgovori") or {}).get(kljuc)
-        return self._kucica(roditelj, natpis, tren == vrednost,
-                            lambda: self.radi(L.odgovori, self.c, kljuc, None if tren == vrednost else vrednost),
-                            self._omoguceno(kljuc))
+        return self._kucica(roditelj, natpis, lambda: self._vrednost(kljuc) == vrednost,
+                            lambda: self.radi(L.odgovori, self.c, kljuc, None if self._vrednost(kljuc) == vrednost else vrednost),
+                            lambda: self._omoguceno(kljuc))
 
     def _kucica_vise(self, roditelj, kljuc: str, vrednost: str, natpis: str):
         """Кућица која додаје или уклања вредност питања са више избора („наследио“: да / спб)."""
-        tren = list((self.c.get("odgovori") or {}).get(kljuc) or [])
-        novo = [x for x in tren if x != vrednost] if vrednost in tren else tren + [vrednost]
-        return self._kucica(roditelj, natpis, vrednost in tren, lambda: self.radi(L.odgovori, self.c, kljuc, novo or None),
-                            self._omoguceno(kljuc))
+        def komanda():
+            tren = list(self._vrednost(kljuc) or [])
+            novo = [x for x in tren if x != vrednost] if vrednost in tren else tren + [vrednost]
+            self.radi(L.odgovori, self.c, kljuc, novo or None)
+        return self._kucica(roditelj, natpis, lambda: vrednost in (self._vrednost(kljuc) or []), komanda,
+                            lambda: self._omoguceno(kljuc))
 
     def _grupa(self, roditelj, kljuc: str, izbori):
         """Кућице од којих важи највише једна (као заокруживање на папиру)."""
-        tren = (self.c.get("odgovori") or {}).get(kljuc)
         for natpis, vrednost in izbori:
-            self._kucica(roditelj, natpis, tren == vrednost,
-                         lambda v=vrednost: self.radi(L.odgovori, self.c, kljuc, None if tren == v else v),
-                         self._omoguceno(kljuc))
+            self._kucica(roditelj, natpis, lambda v=vrednost: self._vrednost(kljuc) == v,
+                         lambda v=vrednost: self.radi(L.odgovori, self.c, kljuc, None if self._vrednost(kljuc) == v else v),
+                         lambda: self._omoguceno(kljuc))
 
-    def _linija(self, roditelj, kljuc: str, sirina: int, savet: str = "", pocetno: str | None = None, upis=None,
-                kljuc_pitanja: str | None = None, napomena: bool = False):
-        """Линија за упис (поље), уписује се при изласку из поља."""
-        odg = self.c.get("odgovori") or {}
-        if pocetno is None:
-            pocetno = odg.get(kljuc) or ""
-            s = L.nadji(self.st, kljuc)
-            if s and s["tip"] == "termin" and pocetno:
-                pocetno = s["prikaz"].replace(". у ", " ")
-        v = tk.StringVar(value=pocetno)
+    def _valuta(self, roditelj):
+        """Валута уз цену (налог 27.11.2026): падајући списак евра / динара / друго; унапред евра (list23.PREDEFINISANO)."""
+        v = tk.StringVar()
         self._drzi.append(v)
-        omoguceno = self._omoguceno(kljuc_pitanja or kljuc)
+        cb = ttk.Combobox(roditelj, textvariable=v, values=[x for x, _ in list23.VALUTE], state="readonly", width=8)
+        cb.pack(side="left", padx=(6, 0))
+
+        def osvezi():
+            kod = self._vrednost("valuta")
+            v.set(next((naziv for naziv, k in list23.VALUTE if k == kod), ""))
+            cb.configure(state="readonly" if self._omoguceno("valuta") else "disabled")
+
+        cb.bind("<<ComboboxSelected>>", lambda _e: self.radi(L.odgovori, self.c, "valuta", dict(list23.VALUTE)[v.get()]))
+        osvezi()
+        self._osvezivaci.append(osvezi)
+        self._polja["valuta"] = cb
+        return cb
+
+    def _linija(self, roditelj, kljuc: str, sirina: int, savet: str = "", vrednost=None, upis=None,
+                kljuc_pitanja: str | None = None, napomena: bool = False):
+        """Линија за упис (поље), уписује се при изласку из поља. vrednost — функција текста из модела (подразумевано
+        одговор на питање); освежава се кад се модел промени споља (нпр. „сада“, клик на посао), осим док се у њој куца."""
+        def iz_modela() -> str:
+            if vrednost:
+                return vrednost()
+            t = self._vrednost(kljuc) or ""
+            s = L.nadji(self.st, kljuc)
+            if s and s["tip"] == "termin" and t:
+                t = s["prikaz"].replace(". у ", " ")
+            return str(t)
+
+        v = tk.StringVar()
+        self._drzi.append(v)
         e = tk.Entry(roditelj, textvariable=v, width=sirina, relief="flat", font=self.f["osnovni"], background="#fbfbf7",
                      highlightthickness=1, highlightbackground="#9a9a9a", highlightcolor=NAGLASAK,
-                     state="normal" if omoguceno else "disabled", disabledbackground="#f1f1f1")
+                     disabledbackground="#f1f1f1", disabledforeground="#9a9a9a")
         e.pack(side="left", padx=(2, 0), ipady=2)
-        if savet and not pocetno and omoguceno:
-            e.insert(0, savet)
-            e.configure(foreground="#a0a0a0")
+        stanje = {"poslednje": None}
 
-            def ocisti_savet(_e):
-                if e.cget("foreground") == "#a0a0a0":
-                    e.delete(0, "end")
-                    e.configure(foreground="#111111")
-            e.bind("<FocusIn>", ocisti_savet, add="+")
-        stanje = {"poslednje": pocetno}
+        def omoguceno() -> bool:
+            return self._omoguceno(kljuc_pitanja or kljuc)
+
+        def postavi_tekst(t: str):
+            e.configure(state="normal")
+            e.delete(0, "end")
+            if t:
+                e.insert(0, t)
+                e.configure(foreground="#111111")
+            elif savet:
+                e.insert(0, savet)
+                e.configure(foreground="#a0a0a0")
+            stanje["poslednje"] = t
+
+        def ocisti_savet(_e):
+            if e.cget("foreground") == "#a0a0a0" and str(e.cget("state")) == "normal":
+                e.delete(0, "end")
+                e.configure(foreground="#111111")
 
         def citaj() -> str:
             return "" if e.cget("foreground") == "#a0a0a0" else v.get()
 
+        def osvezi():
+            try:
+                kuca = self.koren.focus_get() is e
+            except (KeyError, tk.TclError):
+                kuca = False
+            t = iz_modela()
+            if not kuca and t != stanje["poslednje"]:
+                postavi_tekst(t)
+            e.configure(state="normal" if omoguceno() else "disabled")
+
         def sacuvaj_liniju():
             t = citaj().strip()
-            if t == stanje["poslednje"].strip() or self.st["samo_citanje"] or not omoguceno:
+            if t == (stanje["poslednje"] or "").strip() or self.st["samo_citanje"] or not omoguceno():
                 return
             try:
                 if upis:
@@ -737,11 +823,21 @@ class Aplikacija:
             self.sacuvaj()
             self.osvezi()
 
+        e.bind("<FocusIn>", ocisti_savet, add="+")
         e.bind("<FocusOut>", lambda _e: sacuvaj_liniju(), add="+")
         e.bind("<Return>", lambda _e: sacuvaj_liniju())
+        postavi_tekst(iz_modela())
+        e.configure(state="normal" if omoguceno() else "disabled")
+        self._osvezivaci.append(osvezi)
         self._potvrde_polja[str(e)] = sacuvaj_liniju
         self._polja[kljuc] = e
         return e
+
+    def _posao_drugo_tekst(self) -> str:
+        odg = self.c.get("odgovori") or {}
+        posao = odg.get("posao") or ""
+        return odg.get("posao_drugo") or (posao if posao and posao not in dict(list23.POSLOVI_NA_LISTU).values()
+                                          and posao != "друго" else "")
 
     def _posao_sa_lista(self, vrednost: str):
         posao = (self.c.get("odgovori") or {}).get("posao")
@@ -768,15 +864,21 @@ class Aplikacija:
 
     def _celija(self, roditelj, kljuc: str, natpis: str, vrednost: str, levo: bool):
         """Ћелија КОНТРОЛЕ (Да | Не): лева је подразумевана колона листа, десна алтернатива."""
-        tren = (self.c.get("odgovori") or {}).get(kljuc)
-        izabrana = tren == vrednost
-        omoguceno = self._omoguceno(kljuc)
-        pozadina = ("#cfe8d4" if levo else "#fbd3b0") if izabrana else "white"
-        c = tk.Label(roditelj, text=natpis, width=4, background=pozadina, relief="solid", borderwidth=1,
-                     font=self.f["jaki"] if izabrana else self.f["osnovni"], foreground="#111111" if omoguceno else "#b0b0b0",
-                     cursor="hand2" if omoguceno else "")
-        if omoguceno:
-            c.bind("<Button-1>", lambda _e: self.radi(L.odgovori, self.c, kljuc, None if izabrana else vrednost))
+        c = tk.Label(roditelj, text=natpis, width=4, relief="solid", borderwidth=1)
+
+        def osvezi():
+            izabrana, om = self._vrednost(kljuc) == vrednost, self._omoguceno(kljuc)
+            c.configure(background=("#cfe8d4" if levo else "#fbd3b0") if izabrana else "white",
+                        font=self.f["jaki"] if izabrana else self.f["osnovni"],
+                        foreground="#111111" if om else "#b0b0b0", cursor="hand2" if om else "")
+
+        def klik(_e):
+            if self._omoguceno(kljuc):
+                self.radi(L.odgovori, self.c, kljuc, None if self._vrednost(kljuc) == vrednost else vrednost)
+
+        c.bind("<Button-1>", klik)
+        osvezi()
+        self._osvezivaci.append(osvezi)
         self._celije[(kljuc, vrednost)] = c
         return c
 
@@ -785,13 +887,8 @@ class Aplikacija:
         return f"✓ {p.get('ime', '')}, {S.datum_vreme(p.get('vreme', ''))}" if p else ""
 
     def _paraf_kucica(self, roditelj, k: str, natpis: str):
-        potpisano = bool((self.c.get("potvrde") or {}).get(k))
-        okvir = self._kucica(roditelj, natpis, potpisano, lambda: self.parafiraj(k),
-                             not potpisano and not self.st["samo_citanje"])
-        if potpisano:
-            tk.Label(okvir, text="  " + self._paraf_tekst(k), background="white", foreground="#2f6b3d",
-                     font=self.f["mali"]).pack(side="left")
-        return okvir
+        return self._kucica(roditelj, natpis, lambda: bool((self.c.get("potvrde") or {}).get(k)), lambda: self.parafiraj(k),
+                            dodatak=lambda: self._paraf_tekst(k))
 
     def _paraf_linija(self, roditelj, k: str, natpis: str):
         tk.Label(roditelj, text=natpis, background="white", font=self.f["jaki"], wraplength=360, justify="center").pack(
@@ -799,21 +896,26 @@ class Aplikacija:
         self._paraf_celija(roditelj, k, crta=True).pack(fill="x")
 
     def _paraf_celija(self, roditelj, k: str, crta: bool = False):
+        """„парафирај“ / „✓ име, време“: клик парафира, поновни клик поништава параф (налог 27.11.2026: без питања)."""
         okvir = None
         if crta:
             okvir = tk.Frame(roditelj, background="white")
             roditelj = okvir
-        tekst = self._paraf_tekst(k)
-        if tekst:
-            w = tk.Label(roditelj, text=tekst, background="white", foreground="#2f6b3d", font=self.f["mali"], pady=4,
-                         relief="solid" if not crta else "flat", borderwidth=0 if crta else 1)
-        elif self.st["samo_citanje"]:
-            w = tk.Label(roditelj, text=" ", background="white", relief="solid" if not crta else "flat",
-                         borderwidth=0 if crta else 1, pady=4)
-        else:
-            w = tk.Label(roditelj, text="парафирај", background="white", foreground="#2c6aa0", cursor="hand2",
-                         font=self.f["mali"], pady=4, relief="solid" if not crta else "flat", borderwidth=0 if crta else 1)
-            w.bind("<Button-1>", lambda _e: self.parafiraj(k))
+        w = tk.Label(roditelj, background="white", font=self.f["mali"], pady=4, relief="flat" if crta else "solid",
+                     borderwidth=0 if crta else 1)
+
+        def osvezi():
+            tekst = self._paraf_tekst(k)
+            if tekst:
+                w.configure(text=tekst, foreground="#2f6b3d", cursor="hand2" if not self.st["samo_citanje"] else "")
+            elif self.st["samo_citanje"]:
+                w.configure(text=" ", cursor="")
+            else:
+                w.configure(text="парафирај", foreground="#2c6aa0", cursor="hand2")
+
+        w.bind("<Button-1>", lambda _e: self.parafiraj(k) if not self.st["samo_citanje"] else None)
+        osvezi()
+        self._osvezivaci.append(osvezi)
         if okvir is not None:
             w.pack(fill="x")
             tk.Frame(okvir, background="#555555", height=1).pack(fill="x")
@@ -1176,10 +1278,8 @@ class Aplikacija:
         if self.st["samo_citanje"]:
             return
         if not spisak:
-            if posle:
-                if messagebox.askyesno(NAZIV, "Нема предложених одговора. Парафирати „" + P.POTVRDE["primio"] + "“ као "
-                                       + (self.c.get("popunio") or "") + "? Параф се не поништава.", parent=self.koren):
-                    self.potvrdi_spisak([], posle)
+            if posle:  # параф „Предмет сам примила/о“ без предлога — одмах, без питања (налог 27.11.2026)
+                self.potvrdi_spisak([], posle)
             else:
                 messagebox.showinfo(NAZIV, "Нема предложених одговора за потврду.", parent=self.koren)
             return
@@ -1237,16 +1337,19 @@ class Aplikacija:
                 ttk.Button(red, text="Парафирај", style="Malo.TButton", command=lambda k=k: self.parafiraj(k)).pack(side="right")
 
     def parafiraj(self, k: str):
+        """Параф одмах, без питања (налог 27.11.2026); поновни клик на парафирано поништава параф."""
         self._sacuvaj_otvoreno()
+        if self.st["samo_citanje"]:
+            return
+        if (self.c.get("potvrde") or {}).get(k):
+            self.radi(L.ponisti_potvrdu, self.c, k)
+            return
         if not (self.c.get("popunio") or "").strip():
             messagebox.showwarning(NAZIV, "Пре парафа упишите своје име у поље „Попунио/ла“ (у заглављу).", parent=self.koren)
             self.e_popunio.focus_set()
             return
         if k == "primio":
             self.grupna_potvrda(posle=lambda spisak: L.potvrdi(self.c, "primio", spisak))
-            return
-        if not messagebox.askyesno(NAZIV, f"Парафирати „{P.POTVRDE[k]}“ као {self.c['popunio']}? Параф се не поништава.",
-                                   parent=self.koren):
             return
         self.radi(L.potvrdi, self.c, k)
 

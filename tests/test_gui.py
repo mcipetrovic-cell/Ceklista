@@ -95,7 +95,7 @@ def zapocni(koren, posao="Продаја"):
     app = gui.Aplikacija(koren)
     koren.update()
     assert app.rad.winfo_ismapped() and app.izbor == gui.LIST and not app.ulaz.platno.winfo_ismapped()
-    if posao:
+    if posao and posao != "Продаја":  # продаја је унапред означена (налог 27.11.2026)
         klik(koren, posao)
     return app
 
@@ -118,13 +118,17 @@ def test_pocetak_je_prazan_list(koren, poruke):
     app = gui.Aplikacija(koren)
     koren.update()
     assert app.izbor == gui.LIST and app.putanja is None and app.c["lica"] == []
-    assert app.c["odgovori"] == {"cena_isplacena": "да", "posed_predat": "да", "porez_snosi": "купац"}
+    assert app.c["odgovori"] == {"cena_isplacena": "да", "posed_predat": "да", "porez_snosi": "купац", "posao": "продаја", "valuta": "EUR",
+                               "dok_za_vracanje": "НЕ", "sacinio_list": "ми"}
     assert "још није сачувана" in app.l_stanje.cget("text")
     assert not app.levo.winfo_ismapped() and str(koren.cget("menu")) == ""
     assert app._papir.winfo_ismapped()
-    for natpis in ("Лично", "Мејлом", "Запис", "Солемнизација", "Продаја", "Имамо ЛК уговарача и супружника",
-                   "Купац прихвата ризик", "Стичу сусвојину са уделима од по 1/2", "Ми"):
+    for natpis in ("Лично", "Мејлом", "Запис", "Солемнизација", "Поклон", "Имамо ЛК уговарача и супружника",
+                   "Купац прихвата ризик", "Стичу сусвојину са уделима од по 1/2", "Адвокат"):
         assert kucica(koren, natpis) == "☐"
+    for natpis in ("Продаја", "Нема документације која се враћа", "Ми"):  # унапред означено (налог 27.11.2026)
+        assert kucica(koren, natpis) == "☑"
+    assert app._polja["valuta"].get() == "евра"
     assert kucica(koren, "Да", 0) == "☐"  # „Купац првог стана“ није унапред означен
     assert kucica(koren, "Да", 1) == "☑" and kucica(koren, "Да", 2) == "☑" and kucica(koren, "Купац") == "☑"
     assert not [w for w in svi(koren) if isinstance(w, tk.Label) and "пор. пријаве" in str(w.cget("text"))]  # уклоњено
@@ -442,3 +446,63 @@ def test_svi_delovi_za_sve_poslove(koren, poruke):
             app.idi(oid)
             koren.update_idletasks()
     assert not poruke
+
+
+def test_klik_na_listu_ne_trepce(koren, poruke):
+    """Налог 27.11.2026 („сваки пут када пристиснем нешто апликација трепне“): клик на листу не исцртава лист
+    поново — исти делови прозора остају, мења се само ☐/☑, сиво, текст парафа и бројачи."""
+    app = zapocni(koren)
+    papir, brojac = app._papir, app._cipovi_brojaca[L.DA]
+    pre = {str(w) for w in svi(app._papir)}
+    for natpis in ("Мејлом", "Запис", "Поклон", "Продаја", "Купац прихвата ризик"):
+        klik(koren, natpis)
+    klikni(koren, app._celije[("pranje_novca", "ДА")])
+    app.v_popunio.set("Мила")
+    app._sacuvaj_popunio()
+    klik(koren, "парафирај", 3)  # Читао
+    assert papir.winfo_exists() and app._papir is papir and brojac.winfo_exists()
+    assert {str(w) for w in svi(app._papir)} >= pre  # ниједан део листа није направљен изнова
+    assert kucica(koren, "Мејлом") == "☑" and kucica(koren, "Купац прихвата ризик") == "☑"
+    assert app._celije[("pranje_novca", "ДА")].cget("background") == "#fbd3b0"
+    assert app.c["potvrde"]["citao"]["ime"] == "Мила"
+    assert brojac.cget("text").strip().startswith("Да ")
+
+
+def test_sivo_se_menja_bez_ponovnog_crtanja(koren, poruke):
+    app = zapocni(koren)
+    cena = polje_za(app, "cena")
+    assert str(cena.cget("state")) == "normal"
+    klik(koren, "Поклон")
+    assert polje_za(app, "cena") is cena and str(cena.cget("state")) == "disabled"  # цена само за продају
+    assert str(app._polja["valuta"].cget("state")) == "disabled"
+    klik(koren, "Продаја")
+    assert str(cena.cget("state")) == "normal"
+
+
+def test_valuta_uz_cenu(koren, poruke):
+    """Налог 27.11.2026: уз цену падајући списак евра / динара, подразумевано евра."""
+    app = zapocni(koren)
+    cb = app._polja["valuta"]
+    assert cb.get() == "евра" and app.c["odgovori"]["valuta"] == "EUR"
+    cb.set("динара")
+    cb.event_generate("<<ComboboxSelected>>")
+    koren.update()
+    assert app.c["odgovori"]["valuta"] == "RSD" and fajl.ucitaj(app.putanja)["odgovori"]["valuta"] == "RSD"
+    assert any("[CENA_EUR]" in x for x in [u["poruka"] for u in L.provera(app.c)])  # напомена за Word као у Сави
+
+
+def test_paraf_bez_pitanja_i_ponistavanje(koren, poruke):
+    """Налог 27.11.2026: параф без питања „Парафирати…?“; поновни клик поништава параф."""
+    app = zapocni(koren)
+    app.v_popunio.set("Иван")
+    app._sacuvaj_popunio()
+    klik(koren, "▤  Предмет физички спакован")
+    assert app.c["potvrde"]["spakovan"]["ime"] == "Иван" and kucica(koren, "▤  Предмет физички спакован") == "☑"
+    assert not any("Парафирати" in p for p in poruke)
+    klik(koren, "▤  Предмет физички спакован")
+    assert "spakovan" not in app.c["potvrde"] and kucica(koren, "▤  Предмет физички спакован") == "☐"
+    klik(koren, "парафирај", 0)  # „Предмет сам примила/о“ — са предлозима прво списак
+    dijalog = next(w for w in koren.winfo_children() if isinstance(w, gui.DijalogPotvrde))
+    dijalog.potvrdi()
+    koren.update()
+    assert app.c["potvrde"]["primio"]["ime"] == "Иван" and not any("Парафирати" in p for p in poruke)

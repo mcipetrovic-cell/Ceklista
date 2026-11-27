@@ -379,12 +379,28 @@ def test_nov_list_unapred_oznaceno():
     """Налог 27.11.2026: исплата цене „Да“, посед „Да“, порез „Купац“ су на новом листу унапред означени — као
     одговори (мењају се кликом), са трагом „унапред означено“; за посао који није продаја не важе."""
     c = L.nov_list()
-    assert c["odgovori"] == {"cena_isplacena": "да", "posed_predat": "да", "porez_snosi": "купац"}
-    assert c["trag"]["porez_snosi"]["nacin"] == "predefinisano"
-    L.postavi_posao(c, "продаја")
+    assert c["odgovori"] == {"cena_isplacena": "да", "posed_predat": "да", "porez_snosi": "купац", "posao": "продаја", "valuta": "EUR",
+                               "dok_za_vracanje": "НЕ", "sacinio_list": "ми"}
+    assert c["trag"]["porez_snosi"]["nacin"] == "predefinisano" and "posao" not in c["trag"]
+    assert stavka(c, "dok_za_vracanje")["status"] == L.NE and stavka(c, "valuta")["prikaz"] == "EUR"
     assert stavka(c, "cena_isplacena")["status"] == L.DA and stavka(c, "porez_snosi")["predlog"] is None
     assert not any(x["k"] in c["odgovori"] for x in L.stanje(c)["grupna"])
     L.odgovori(c, "posed_predat", "не")
     assert c["odgovori"]["posed_predat"] == "не"
     L.postavi_posao(c, "поклон")
     assert stavka(c, "cena_isplacena")["primenljivost"] == "ne"
+
+
+def test_parafi_ponistavanje(prodaja):
+    """Налог 27.11.2026: параф без питања — поновни клик поништава (ponisti_potvrdu)."""
+    L.postavi_popunio(prodaja, "Мила")
+    L.potvrdi(prodaja, "citao")
+    L.ponisti_potvrdu(prodaja, "citao")
+    assert "citao" not in prodaja["potvrde"]
+    L.ponisti_potvrdu(prodaja, "citao")  # већ поништен — ништа
+    with pytest.raises(L.GreskaUnosa):
+        L.ponisti_potvrdu(prodaja, "nepoznat")
+    L.potvrdi(prodaja, "citao")
+    L.zavrsi(prodaja)
+    with pytest.raises(L.GreskaUnosa, match="завршена"):
+        L.ponisti_potvrdu(prodaja, "citao")
