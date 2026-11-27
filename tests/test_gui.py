@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -25,9 +26,21 @@ def poruke(monkeypatch):
     return zapis
 
 
+def novi_tk() -> tk.Tk:
+    """Tk на Windows машини GitHub-а повремено не нађе своје датотеке при поновљеном покретању („Can't find a usable
+    tk.tcl“, 27.11.2026) — то није грешка програма; проба покушава поново."""
+    for pokusaj in range(5):
+        try:
+            return tk.Tk()
+        except tk.TclError:
+            if pokusaj == 4:
+                raise
+            time.sleep(1 + pokusaj)
+
+
 @pytest.fixture
 def koren():
-    k = tk.Tk()
+    k = novi_tk()
     k.geometry("1280x800+0+0")
     yield k
     try:
@@ -370,7 +383,7 @@ def test_novo_pokretanje_pocinje_praznim_listom(koren, poruke):
     app = sa_strankama(koren)
     putanja = app.putanja
     koren.destroy()
-    k2 = tk.Tk()
+    k2 = novi_tk()
     try:
         app2 = gui.Aplikacija(k2)
         k2.update()
