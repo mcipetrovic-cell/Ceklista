@@ -93,6 +93,11 @@ class Pomicno(ttk.Frame):
             w = self.winfo_containing(*self.winfo_pointerxy())
         except (KeyError, tk.TclError):
             return False
+        try:
+            if w is not None and w.winfo_toplevel() is not self.winfo_toplevel():
+                return False  # показивач је над прозором предлога: точкић помера тај списак, не страну
+        except (KeyError, tk.TclError):
+            return False
         while w is not None:
             if w is self:
                 return True
@@ -622,30 +627,26 @@ class Aplikacija:
         # 5. ЛК (ставка „Дате су им пор. пријаве“ уклоњена — налог 27.11.2026)
         r = red()
         self._kucica_kljuc(r, "lk_ugovaraca", "Имамо ЛК уговарача и супружника", "да")
-        # 6. Супружници — динамично (налог 27.11.2026): називи страна по правном послу, ставке које за посао не важе
-        #    (по правилима Саве) се не приказују
+        # 6. Супружници — динамично (налог 27.11.2026): називи страна по правном послу; ставке које за посао не важе
+        #    се не приказују (правила Саве; супружник стицаоца само код продаје); у свакој колони важи једна ставка
         posao = self._vrednost("posao") or ""
         R, r_gen, Sc, s_gen = list23.ULOGE.get(posao, list23.ULOGE_PAPIR)
         papir_reci = posao not in list23.ULOGE or posao == "продаја"
         vazi = self._vazi_na_listu
-        stavke_levo = [
-            ("nasledio", lambda r: self._kucica_vise(r, "nasledio", "да", f"{R} је наследио / поклон")),
-            ("prodavac_nije_u_braku", lambda r: self._kucica_kljuc(r, "prodavac_nije_u_braku", f"{R} није у браку", "да")),
-            ("sup_prodavca_dolazi", lambda r: self._kucica_kljuc(r, "sup_prodavca_dolazi", "Супружник долази да да сагласност", "да")),
-            ("nasledio", lambda r: self._kucica_vise(r, "nasledio", "спб", f"{R} {'купио' if papir_reci else 'стекао'} пре брака — доказ")),
-            ("kupac_prihvata_rizik", lambda r: self._kucica_kljuc(r, "kupac_prihvata_rizik", f"{Sc} прихвата ризик", "да")),
-        ]
-        stavke_desno = [
-            ("sup_kupca_dolazi", lambda r: self._kucica_kljuc(r, "sup_kupca_dolazi", "Супружник долази да да сагласност", "да")),
-            ("kupac_nije_u_braku", lambda r: self._kucica_kljuc(r, "kupac_nije_u_braku", f"{Sc} није у браку", "да")),
-            ("oba_supruznika", lambda r: self._kucica_kljuc(r, "oba_supruznika", f"{Sc} и његов супружник стичу заједно", "да")),
-            ("susvojina_pola", lambda r: self._kucica_kljuc(r, "susvojina_pola", "Стичу сусвојину са уделима од по 1/2", "да")),
-            ("kupac_prvi_stan", lambda r: (tekst(r, "Купац првог стана  ", font=(F["osnovni"][0], F["osnovni"][1], "italic")),
-                                           self._grupa(r, "kupac_prvi_stan", (("Да", "да"), ("Не", "не"))))),
-        ]
-        stavke_levo = [x for x in stavke_levo if vazi(x[0])]
-        stavke_desno = [x for x in stavke_desno if vazi(x[0])]
-        if stavke_levo or stavke_desno:
+        natpisi = {("nasledio", "да"): f"{R} је наследио / поклон",
+                   ("prodavac_nije_u_braku", "да"): f"{R} није у браку",
+                   ("sup_prodavca_dolazi", "да"): "Супружник долази да да сагласност",
+                   ("nasledio", "спб"): f"{R} {'купио' if papir_reci else 'стекао'} пре брака — доказ",
+                   ("kupac_prihvata_rizik", "да"): f"{Sc} прихвата ризик",
+                   ("sup_kupca_dolazi", "да"): "Супружник долази да да сагласност",
+                   ("kupac_nije_u_braku", "да"): f"{Sc} није у браку",
+                   ("oba_supruznika", "да"): f"{Sc} и његов супружник стичу заједно",
+                   ("susvojina_pola", "да"): "Стичу сусвојину са уделима од по 1/2"}
+        # „оба супружника стичу“ (Сава: продаја и поклон) — на листу само уз продају (супружник стицаоца)
+        levo_k = [x for x in list23.SUPRUZNIK_RASPOLAGACA if vazi(x[0])]
+        desno_k = [x for x in list23.SUPRUZNIK_STICAOCA if vazi(x[0]) and (x[0] != "oba_supruznika" or posao in ("", "продаја"))]
+        prvi_stan = vazi("kupac_prvi_stan")
+        if levo_k or desno_k or prvi_stan:
             traka_naslov("Супружници")
             dve = tk.Frame(papir, background=B)
             dve.pack(fill="x", pady=(0, 6))
@@ -653,13 +654,22 @@ class Aplikacija:
             levo.pack(side="left", fill="both", expand=True)
             desno.pack(side="left", fill="both", expand=True, padx=(20, 0))
             naslovi = ("Продавчев супружник", "Купчев супружник") if papir_reci else (f"Супружник {r_gen}", f"Супружник {s_gen}")
-            for kolona, naslov in zip((levo, desno), naslovi):
+            for kolona, naslov, stavke in ((levo, naslovi[0], levo_k), (desno, naslovi[1], desno_k)):
+                if not stavke:
+                    continue
                 tk.Label(kolona, text=naslov, background=B, font=F["osnovni"]).pack(pady=(0, 6))
-            for kolona, stavke in ((levo, stavke_levo), (desno, stavke_desno)):
-                for _k, napravi in stavke:
+                for kljuc, vrednost in stavke:
                     r = tk.Frame(kolona, background=B)
                     r.pack(fill="x", pady=3)
-                    napravi(r)
+                    self._kucica(r, natpisi[(kljuc, vrednost)],
+                                 lambda k=kljuc, v=vrednost: self._oznacena_stavka(k, v),
+                                 lambda k=kljuc, v=vrednost, s=tuple(stavke): self._jedna_u_koloni(s, k, v),
+                                 lambda k=kljuc: self._omoguceno(k))
+            if prvi_stan:
+                r = tk.Frame(desno, background=B)
+                r.pack(fill="x", pady=3)
+                tekst(r, "Купац првог стана  ", font=(F["osnovni"][0], F["osnovni"][1], "italic"))
+                self._grupa(r, "kupac_prvi_stan", (("Да", "да"), ("Не", "не")))
         # 7. Део који се попуњава кад канцеларија прави уговор — по правном послу (Сава: целине „В.“ и „Г.“)
         traka_naslov("Овај део се попуњава само када ми правимо уговор")
         if not posao or posao == "друго":
@@ -708,6 +718,31 @@ class Aplikacija:
                      font=F["jaki"] if i == 0 else F["osnovni"]).grid(row=i, column=0, sticky="e", padx=(0, 4))
             for j, (natpis, vrednost) in enumerate((levo_, desno_)):
                 self._celija(tabela, kljuc, natpis, vrednost, levo=j == 0).grid(row=i, column=1 + j, sticky="nsew")
+
+    def _oznacena_stavka(self, kljuc: str, vrednost: str) -> bool:
+        tren = self._vrednost(kljuc)
+        return vrednost in tren if isinstance(tren, list) else tren == vrednost
+
+    def _jedna_u_koloni(self, stavke, kljuc: str, vrednost: str):
+        """Колона о супружнику: означава се једна ставка — остале у колони се бришу; поновни клик брише и њу."""
+        bila = self._oznacena_stavka(kljuc, vrednost)
+
+        def promena():
+            for k, v in stavke:
+                tren = self._vrednost(k)
+                if isinstance(tren, list):
+                    ostalo = [x for x in tren if x != v]
+                    if ostalo != tren:
+                        L.odgovori(self.c, k, ostalo or None)
+                elif tren == v:
+                    L.odgovori(self.c, k, None)
+            if not bila:
+                tren = self._vrednost(kljuc)
+                if L.OPSTA[kljuc][1]["tip"] == "vise":
+                    L.odgovori(self.c, kljuc, list(tren or []) + [vrednost])
+                else:
+                    L.odgovori(self.c, kljuc, vrednost)
+        self.radi(promena)
 
     def _vazi_na_listu(self, kljuc: str) -> bool:
         """Ставка листа се приказује кад за изабрани посао важи или је „за проверу“ (правила Саве); ставка која зависи
@@ -1558,6 +1593,7 @@ class PoljeSaPredlozima:
         self.b.pack(side="left", padx=(2, 0))
         self.popup: tk.Toplevel | None = None
         self.lb: tk.Listbox | None = None
+        self.klizac = None
         self.stavke: list[str] = []
         self.mis_u_predlozima = False
         self.poslednje = pocetno
@@ -1573,6 +1609,8 @@ class PoljeSaPredlozima:
         e.bind("<Return>", self.potvrdi)
         e.bind("<KP_Enter>", self.potvrdi)
         e.bind("<Escape>", lambda _e: self.zatvori())
+        for dogadjaj in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            e.bind(dogadjaj, lambda d: self._tocak(d) if self._nad_predlozima() else None)
         e.bind("<FocusOut>", lambda _e: e.after(200, self._izlaz), add="+")
 
     # ---- текст поља
@@ -1614,6 +1652,11 @@ class PoljeSaPredlozima:
         self._ocisti_savet()
         self.e.focus_set()
         self.prikazi(list(self.predlozi))
+        if self.tekst() in self.stavke:  # тренутни посао је означен у целом списку
+            i = self.stavke.index(self.tekst())
+            self.lb.selection_clear(0, "end")
+            self.lb.selection_set(i)
+            self.lb.see(i)
 
     def prikazi(self, stavke: list[str]):
         self.stavke = stavke
@@ -1623,8 +1666,14 @@ class PoljeSaPredlozima:
             self.lb = tk.Listbox(self.popup, font=self.app.f["osnovni"], activestyle="none", exportselection=False, takefocus=0,
                                  relief="solid", borderwidth=1, highlightthickness=0, selectbackground="#dbe5f1",
                                  selectforeground=TEKST, background="white")
-            self.lb.pack(fill="both", expand=True)
+            self.klizac = ttk.Scrollbar(self.popup, orient="vertical", command=self.lb.yview)
+            self.lb.configure(yscrollcommand=self.klizac.set)
+            self.lb.pack(side="left", fill="both", expand=True)
             self.lb.bind("<ButtonRelease-1>", self._klik)
+            # мишем (налог 27.11.2026): точкић помера списак, показивач означава предлог, клик га бира
+            self.lb.bind("<Motion>", self._oznaci_pod_misem)
+            for dogadjaj in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                self.lb.bind(dogadjaj, self._tocak)
             # прозор предлога не задржава тастатуру: ако је добије (Windows / X), враћа је пољу
             self.popup.bind("<FocusIn>", lambda _e: self.e.after_idle(self._vrati_fokus))
             self.popup.bind("<Enter>", lambda _e: setattr(self, "mis_u_predlozima", True))
@@ -1633,6 +1682,10 @@ class PoljeSaPredlozima:
         for x in stavke:
             self.lb.insert("end", x)
         self.lb.configure(height=min(10, len(stavke)))
+        if len(stavke) > 10:
+            self.klizac.pack(side="right", fill="y")
+        else:
+            self.klizac.pack_forget()
         self.lb.selection_clear(0, "end")
         self.lb.selection_set(0)
         self.lb.see(0)
@@ -1659,7 +1712,7 @@ class PoljeSaPredlozima:
                 self.popup.destroy()
             except tk.TclError:
                 pass
-        self.popup, self.lb, self.stavke, self.mis_u_predlozima = None, None, [], False
+        self.popup, self.lb, self.klizac, self.stavke, self.mis_u_predlozima = None, None, None, [], False
 
     def otvoren(self) -> bool:
         return self.popup is not None
@@ -1681,6 +1734,34 @@ class PoljeSaPredlozima:
         self.lb.selection_set(i)
         self.lb.see(i)
         return "break"
+
+    def _tocak(self, e):
+        """Точкић над списком предлога помера списак (и кад је тастатура у пољу)."""
+        if self.lb is None:
+            return "break"
+        if getattr(e, "num", None) == 4:
+            korak = -1
+        elif getattr(e, "num", None) == 5:
+            korak = 1
+        else:
+            korak = -1 if getattr(e, "delta", 0) > 0 else 1
+        self.lb.yview_scroll(korak * 3, "units")
+        return "break"
+
+    def _nad_predlozima(self) -> bool:
+        try:
+            w = self.e.winfo_containing(*self.e.winfo_pointerxy())
+            return self.popup is not None and w is not None and w.winfo_toplevel() is self.popup
+        except (KeyError, tk.TclError):
+            return False
+
+    def _oznaci_pod_misem(self, e):
+        if self.lb is None:
+            return
+        i = self.lb.nearest(e.y)
+        if 0 <= i < len(self.stavke):
+            self.lb.selection_clear(0, "end")
+            self.lb.selection_set(i)
 
     def _klik(self, _e):
         i = self.lb.nearest(_e.y) if self.lb is not None else None

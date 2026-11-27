@@ -138,7 +138,8 @@ def test_pocetak_je_prazan_list(koren, poruke):
     assert kucica(koren, "Да", 0) == "☐"  # „Купац првог стана“ није унапред означен
     assert kucica(koren, "Да", 1) == "☑" and kucica(koren, "Да", 2) == "☑" and kucica(koren, "Купац") == "☑"
     assert not [w for w in svi(koren) if isinstance(w, tk.Label) and "пор. пријаве" in str(w.cget("text"))]  # уклоњено
-    assert {k for k, _ in app._celije} >= {"cena_ok", "pranje_novca", "dato_uputstvo"}  # 12 редова КОНТРОЛЕ
+    assert {k for k, _ in app._celije} >= {"cena_ok", "pranje_novca"} and len(app._celije) == 22  # 11 редова КОНТРОЛЕ
+    assert "Дато им кратко упутство" not in {str(w.cget("text")) for w in svi(koren) if isinstance(w, tk.Label)}
     assert fajl.spisak() and fajl.spisak()[0]["naziv"] == "ОПУ 12/2026"  # постојећа није отворена сама
 
 
@@ -146,23 +147,22 @@ def test_klik_na_listu_je_odgovor(koren, poruke):
     app = zapocni(koren)
     assert app.c["odgovori"]["posao"] == "продаја" and kucica(koren, "Продаја") == "☑"
     for natpis in ("Мејлом", "Запис", "Имамо ЛК уговарача и супружника", "Продавац је наследио / поклон",
-                   "Продавац купио пре брака — доказ", "Купац прихвата ризик"):
+                   "Купац није у браку"):
         klik(koren, natpis)
     o = app.c["odgovori"]
-    assert (o["nacin_prijema"], o["forma"], o["lk_ugovaraca"], o["nasledio"], o["kupac_prihvata_rizik"]) == \
-        ("имејлом", "јавнобележнички запис", "да", ["да", "спб"], "да")
+    assert (o["nacin_prijema"], o["forma"], o["lk_ugovaraca"], o["nasledio"], o["kupac_nije_u_braku"]) == \
+        ("имејлом", "јавнобележнички запис", "да", ["да"], "да")
     klik(koren, "Лично")  # друга кућица исте групе замењује прву
     klik(koren, "Продавац је наследио / поклон")  # поновни клик уклања
-    assert o["nacin_prijema"] == "лично" and o["nasledio"] == ["спб"]
+    assert o["nacin_prijema"] == "лично" and "nasledio" not in o
     klikni(koren, app._celije[("mesto", "терен")])  # КОНТРОЛА „Излази се на лице места“ — десно „Да“
     assert o["mesto"] == "терен"
-    klikni(koren, app._celije[("dato_uputstvo", "ДА")])  # нова ставка листа 23.1
     klik(koren, "Да", 0)  # „Купац првог стана“ — Да
-    assert o["dato_uputstvo"] == "ДА" and o["kupac_prvi_stan"] == "да"
+    assert o["kupac_prvi_stan"] == "да"
     klikni(koren, app._celije[("mesto", "терен")])  # поновни клик на изабрану ћелију — без одговора
     assert "mesto" not in o
     sacuvano = fajl.ucitaj(app.putanja)["odgovori"]  # сачувано одмах
-    assert sacuvano["dato_uputstvo"] == "ДА" and "mesto" not in sacuvano
+    assert sacuvano["kupac_prvi_stan"] == "да" and "mesto" not in sacuvano
     assert not poruke
 
 
@@ -536,8 +536,9 @@ def test_list_prati_pravni_posao(koren, poruke):
     assert {"Продавчев супружник", "Купчев супружник", "Купац првог стана  "} <= natpisi()
     klik(koren, "Поклон")
     n = natpisi()
-    assert {"Супружник поклонодавца", "Супружник поклонопримца", "Поклонодавац је наследио / поклон",
-            "Поклонопримац и његов супружник стичу заједно", "Мотив поклона:  "} <= n
+    assert {"Супружник поклонодавца", "Поклонодавац је наследио / поклон", "Мотив поклона:  "} <= n
+    # налог 27.11.2026: код поклона се не тражи сагласност супружника поклонопримца — његове колоне нема
+    assert "Супружник поклонопримца" not in n and "Поклонопримац и његов супружник стичу заједно" not in n
     assert "Купац првог стана  " not in n and "cena" not in app._polja and "motiv" in app._polja
     klik(koren, "Доживотно")
     n = natpisi()
@@ -648,3 +649,82 @@ def test_drugo_kucanje_tastaturom_i_enter(koren, poruke):
     w.e.event_generate("<KeyPress>", keysym="Return")
     koren.update()
     assert app.c["odgovori"]["posao"] == "заложна изјава"
+
+
+def test_supruznik_jedna_opcija_u_koloni(koren, poruke):
+    """Налог 27.11.2026: „у овом делу може да се изабере само једна опција“ — у колони о супружнику једне стране важи
+    једна ставка; нова ознака брише претходну, поновни клик брише и њу. Колоне две стране су независне."""
+    app = zapocni(koren)
+    o = app.c["odgovori"]
+    klik(koren, "Продавац није у браку")
+    klik(koren, "Супружник долази да да сагласност", 0)  # продавчев супружник
+    assert "prodavac_nije_u_braku" not in o and o["sup_prodavca_dolazi"] == "да"
+    klik(koren, "Продавац купио пре брака — доказ")
+    assert "sup_prodavca_dolazi" not in o and o["nasledio"] == ["спб"]
+    klik(koren, "Продавац је наследио / поклон")  # исто питање, друга вредност — замењује
+    assert o["nasledio"] == ["да"]
+    klik(koren, "Купац и његов супружник стичу заједно")  # друга колона — не дира прву
+    klik(koren, "Стичу сусвојину са уделима од по 1/2")
+    assert o["nasledio"] == ["да"] and "oba_supruznika" not in o and o["susvojina_pola"] == "да"
+    klik(koren, "Стичу сусвојину са уделима од по 1/2")
+    assert "susvojina_pola" not in o
+    assert kucica(koren, "Продавац је наследио / поклон") == "☑" and kucica(koren, "Продавац није у браку") == "☐"
+
+
+def test_supruznik_sticaoca_samo_kod_prodaje(koren, poruke):
+    """Налог 27.11.2026: код доброчиних послова (поклон, уступање и расподела) и код других теретних послова не тражи
+    се сагласност супружника стицаоца — колона о њему је на листу само код продаје."""
+    app = zapocni(koren)
+    natpisi = lambda: {str(w.cget("text")) for w in svi(koren) if isinstance(w, tk.Label)}  # noqa: E731
+    assert {"Продавчев супружник", "Купчев супружник", "Купац није у браку"} <= natpisi()
+    for posao in ("Поклон", "Доживотно"):
+        klik(koren, posao)
+        n = natpisi()
+        assert not any(x.startswith("Супружник поклонопримца") or x.startswith("Супружник даваоца") for x in n)
+        assert "Поклонопримац није у браку" not in n and "Давалац издржавања није у браку" not in n
+        assert "Поклонопримац и његов супружник стичу заједно" not in n
+    assert "Супружник примаоца издржавања" in natpisi()  # супружник стране која располаже остаје
+    w = app._posao_drugo_w
+    w._ocisti_savet()
+    w.e.insert(0, "деоба")
+    w.potvrdi()
+    koren.update()
+    n = natpisi()
+    assert "Супружник првог деобничара" in n and "Супружник другог деобничара" not in n
+    assert "Други деобничар није у браку" not in n and "Први деобничар није у браку" in n
+
+
+def test_drugo_predlozi_misem(koren, poruke):
+    """Налог 27.11.2026: по списку предлога може да се помера точкићем миша и да се бира мишем."""
+    app = zapocni(koren)
+    w = app._posao_drugo_w
+    w.prikazi_sve()
+    koren.update()
+    assert w.klizac.winfo_ismapped()  # 21 предлог, види се 10 — клизач
+    pre = w.lb.yview()[0]
+    w.lb.event_generate("<Button-5>")  # точкић надоле (X11); на Windows <MouseWheel>
+    w.lb.event_generate("<MouseWheel>", delta=-120)
+    koren.update()
+    assert w.lb.yview()[0] > pre and w.otvoren()
+    w.lb.see(15)
+    koren.update()
+    y = w.lb.bbox(15)[1] + 2
+    w.lb.event_generate("<Motion>", x=5, y=y)  # показивач означава предлог
+    assert w.izabran() == w.stavke[15]
+    izabran = w.stavke[15]
+    w.lb.event_generate("<ButtonRelease-1>", x=5, y=y)  # клик бира
+    koren.update()
+    assert app.c["odgovori"]["posao"] == izabran
+
+
+def test_tocak_nad_predlozima_ne_pomera_stranu(koren, poruke):
+    app = zapocni(koren)
+    w = app._posao_drugo_w
+    w.prikazi_sve()
+    koren.update()
+    gx, gy = w.lb.winfo_rootx() + 5, w.lb.winfo_rooty() + 5
+    koren.event_generate("<Motion>", warp=True, x=gx - koren.winfo_rootx(), y=gy - koren.winfo_rooty())
+    koren.update()
+    if koren.winfo_containing(gx, gy) is not w.lb:
+        pytest.skip("показивач миша није над списком (без менаџера прозора)")
+    assert not app.sadrzaj._ispod_misa()  # точкић тада не помера страну и не затвара предлоге

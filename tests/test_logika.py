@@ -344,7 +344,7 @@ def test_stavke_lista_23(prodaja):
     """Ставке листа 23.1 којих у Сави нема су питања као и остала: кућица, линија, избор; без услова приказа."""
     c = prodaja
     for k, v in (("primljeno", "27.11.2026 09:30"), ("kontakt", "ПЕТАР ПЕТРОВИЋ"),
-                 ("kupac_prihvata_rizik", "да"), ("kupac_prvi_stan", "не"), ("sacinio_list", "ми"), ("dato_uputstvo", "НЕ")):
+                 ("kupac_prihvata_rizik", "да"), ("kupac_prvi_stan", "не"), ("sacinio_list", "ми")):
         L.odgovori(c, k, v)
     assert c["odgovori"]["primljeno"] == "2026-11-27T09:30"
     assert stavka(c, "kupac_prihvata_rizik")["status"] == L.DA and stavka(c, "susvojina_pola")["status"] == L.NE
@@ -353,10 +353,10 @@ def test_stavke_lista_23(prodaja):
         L.odgovori(c, "sacinio_list", "нотар")
 
 
-def test_dato_uputstvo_je_predlog_leve_kolone(prodaja):
-    s = stavka(prodaja, "dato_uputstvo")
-    assert s["predlog"]["v"] == "ДА" and s["status"] == L.NIJE_PROVERENO
-    assert any(x["k"] == "dato_uputstvo" for x in L.stanje(prodaja)["grupna"])
+def test_dato_uputstvo_uklonjeno():
+    """Налог 27.11.2026: „Дато им кратко упутство“ се избацује — нема питања ни предлога."""
+    assert "dato_uputstvo" not in L.OPSTA
+    assert not any(x["k"] == "dato_uputstvo" for x in L.stanje(L.nov_list())["grupna"])
 
 
 def test_kontrola_ista_kao_sava_i_sa_listom_23(prodaja):
@@ -364,7 +364,6 @@ def test_kontrola_ista_kao_sava_i_sa_listom_23(prodaja):
     L.grupna_potvrda(prodaja, L.stanje(prodaja)["grupna"])
     L.odgovori(prodaja, "lk_ugovaraca", "да")
     L.odgovori(prodaja, "forma", "солемнизација")
-    L.odgovori(prodaja, "dato_uputstvo", None)
     assert L.kontrola(prodaja)["spremno"]
 
 
@@ -412,8 +411,11 @@ def test_list_23_prati_pravni_posao():
     c = L.nov_list()
     for posao, vazi, ne_vazi in (
             ("продаја", {"kupac_prvi_stan", "prodavac_nije_u_braku", "nasledio"}, set()),
-            ("поклон", {"prodavac_nije_u_braku", "nasledio", "motiv"}, {"kupac_prvi_stan", "cena"}),
-            ("доживотно издржавање", {"sup_kupca_dolazi", "dom_iskljucen"}, {"nasledio", "oba_supruznika", "kupac_prvi_stan"}),
+            ("поклон", {"prodavac_nije_u_braku", "nasledio", "motiv"},
+             {"kupac_prvi_stan", "cena", "sup_kupca_dolazi", "kupac_nije_u_braku", "susvojina_pola"}),
+            ("доживотно издржавање", {"sup_prodavca_dolazi", "dom_iskljucen"},
+             {"nasledio", "oba_supruznika", "kupac_prvi_stan", "sup_kupca_dolazi"}),
+            ("уступање и расподела", {"prodavac_nije_u_braku"}, {"sup_kupca_dolazi", "kupac_nije_u_braku"}),
             ("завештање", set(), {"prodavac_nije_u_braku", "susvojina_pola", "kupac_prvi_stan", "nasledio"})):
         L.postavi_posao(c, posao)
         for k in vazi:

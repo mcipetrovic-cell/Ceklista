@@ -82,8 +82,7 @@ def test_grupno_potvrdjeni_predlozi_su_u_sazetku(prodaja):
 def test_lista_23_u_sazetku():
     c = L.nova()
     L.postavi_posao(c, "друго")
-    for k, v in (("posao_drugo", "уговор о грађењу"), ("kupac_prihvata_rizik", "да"), ("telefon", "060 000 000"),
-                 ("dato_uputstvo", "ДА")):
+    for k, v in (("posao_drugo", "уговор о грађењу"), ("kupac_prihvata_rizik", "да"), ("telefon", "060 000 000")):
         L.odgovori(c, k, v)
     t = S.kao_tekst(S.sazetak(c))
     assert "Правни посао: друго (уговор о грађењу)" in t
