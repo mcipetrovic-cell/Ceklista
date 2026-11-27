@@ -1,5 +1,5 @@
-# PyInstaller: један извршни програм Ceklista.exe (без инсталације, без прозора конзоле).
-#   pyinstaller --noconfirm Ceklista.spec   →   dist/Ceklista.exe
+# PyInstaller: један извршни програм Ceklista_<верзија>.exe (без инсталације, без прозора конзоле).
+#   pyinstaller --noconfirm Ceklista.spec   →   dist/Ceklista_<верзија>.exe (нпр. Ceklista_1.2.exe)
 # Програм користи само стандардну библиотеку Python-а (tkinter, json, zipfile) — нема додатних пакета.
 import re
 from pathlib import Path
@@ -22,7 +22,7 @@ verzija_datoteka.write_text(f"""VSVersionInfo(
       StringStruct('FileVersion', '{VERZIJA}'),
       StringStruct('InternalName', 'Ceklista'),
       StringStruct('LegalCopyright', '© 2026 Slavia Brothers, Geneva. All rights reserved.'),
-      StringStruct('OriginalFilename', 'Ceklista.exe'),
+      StringStruct('OriginalFilename', 'Ceklista_{VERZIJA}.exe'),
       StringStruct('ProductName', 'Чек-листа'),
       StringStruct('ProductVersion', '{VERZIJA}')])]),
     VarFileInfo([VarStruct('Translation', [0x281A, 1200])])
@@ -45,7 +45,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="Ceklista",
+    name=f"Ceklista_{VERZIJA}",  # налог 27.11.2026: верзија у називу датотеке (Ceklista_1.2.exe)
     console=False,
     icon=str(KOREN / "data" / "Ceklista.ico"),
     version=str(verzija_datoteka),

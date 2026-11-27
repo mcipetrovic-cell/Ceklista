@@ -343,7 +343,7 @@ def test_sva_pitanja_iz_save_su_u_programu():
 def test_stavke_lista_23(prodaja):
     """Ставке листа 23.1 којих у Сави нема су питања као и остала: кућица, линија, избор; без услова приказа."""
     c = prodaja
-    for k, v in (("primljeno", "27.11.2026 09:30"), ("kontakt", "ПЕТАР ПЕТРОВИЋ"), ("poreske_prijave", "да"),
+    for k, v in (("primljeno", "27.11.2026 09:30"), ("kontakt", "ПЕТАР ПЕТРОВИЋ"),
                  ("kupac_prihvata_rizik", "да"), ("kupac_prvi_stan", "не"), ("sacinio_list", "ми"), ("dato_uputstvo", "НЕ")):
         L.odgovori(c, k, v)
     assert c["odgovori"]["primljeno"] == "2026-11-27T09:30"
@@ -366,3 +366,25 @@ def test_kontrola_ista_kao_sava_i_sa_listom_23(prodaja):
     L.odgovori(prodaja, "forma", "солемнизација")
     L.odgovori(prodaja, "dato_uputstvo", None)
     assert L.kontrola(prodaja)["spremno"]
+
+
+def test_poreske_prijave_uklonjene():
+    """Налог 27.11.2026: ставка „Дате су им пор. пријаве да попуне“ се брише са листа."""
+    assert "poreske_prijave" not in L.OPSTA
+    with pytest.raises(L.GreskaUnosa):
+        L.odgovori(L.nova(), "poreske_prijave", "да")
+
+
+def test_nov_list_unapred_oznaceno():
+    """Налог 27.11.2026: исплата цене „Да“, посед „Да“, порез „Купац“ су на новом листу унапред означени — као
+    одговори (мењају се кликом), са трагом „унапред означено“; за посао који није продаја не важе."""
+    c = L.nov_list()
+    assert c["odgovori"] == {"cena_isplacena": "да", "posed_predat": "да", "porez_snosi": "купац"}
+    assert c["trag"]["porez_snosi"]["nacin"] == "predefinisano"
+    L.postavi_posao(c, "продаја")
+    assert stavka(c, "cena_isplacena")["status"] == L.DA and stavka(c, "porez_snosi")["predlog"] is None
+    assert not any(x["k"] in c["odgovori"] for x in L.stanje(c)["grupna"])
+    L.odgovori(c, "posed_predat", "не")
+    assert c["odgovori"]["posed_predat"] == "не"
+    L.postavi_posao(c, "поклон")
+    assert stavka(c, "cena_isplacena")["primenljivost"] == "ne"

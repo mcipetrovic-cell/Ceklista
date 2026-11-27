@@ -113,3 +113,22 @@ def test_spisak_zapocetih(prodaja, tmp_path):
     assert [x["putanja"] for x in fajl.spisak("zavrsena")] == [b]
     assert {x["putanja"] for x in fajl.spisak("sve")} == {a, b}
     assert fajl.spisak("sve")[0]["putanja"] == b  # новија прва
+
+
+def test_otvorena_cek_lista(prodaja):
+    """Ознака отворене чек-листе: наставак при новом покретању само за постојећу чек-листу у раду."""
+    assert fajl.otvorena() is None
+    p = fajl.sacuvaj(prodaja, fajl.novo_ime(prodaja))
+    fajl.zapamti_otvorenu(p)
+    assert fajl.otvorena() == p.resolve()
+    assert fajl.spisak() and len(fajl.spisak()) == 1  # ознака није чек-листа
+    L.zavrsi(prodaja)
+    fajl.sacuvaj(prodaja, p)
+    assert fajl.otvorena() is None  # завршена се не наставља сама
+    L.vrati_u_rad(prodaja)
+    fajl.sacuvaj(prodaja, p)
+    assert fajl.otvorena() == p.resolve()
+    p.unlink()
+    assert fajl.otvorena() is None  # обрисана
+    fajl.zapamti_otvorenu(None)
+    assert not (fajl.fascikla() / fajl.OTVORENA).exists()

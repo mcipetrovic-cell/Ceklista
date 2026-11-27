@@ -145,7 +145,10 @@ class Aplikacija:
         self.rad = ttk.Frame(koren, style="Pozadina.TFrame")
         self._napravi()
         self.ulaz = Ulaz(self)
-        self.nova_cek_lista()
+        self.sacuvano = ""  # време последњег чувања (за натпис „сачувано“ у заглављу)
+        otvorena = fajl.otvorena()  # започета чек-листа из претходног рада се наставља (налог 27.11.2026)
+        if not (otvorena and self.otvori(otvorena)):
+            self.nova_cek_lista()
         koren.protocol("WM_DELETE_WINDOW", self.zatvori)
 
     # ------------------------------------------------------------ изглед
@@ -272,6 +275,8 @@ class Aplikacija:
             if self.putanja is None:
                 self.putanja = fajl.novo_ime(self.c, self._fascikla())
             fajl.sacuvaj(self.c, self.putanja)
+            fajl.zapamti_otvorenu(self.putanja if self.c.get("stanje") == "u_radu" else None)
+            self.sacuvano = dt.datetime.now().strftime("%H.%M")
         except OSError as e:
             messagebox.showerror(NAZIV, f"Чек-листа није сачувана: {e}", parent=self.koren)
 
@@ -325,7 +330,9 @@ class Aplikacija:
         """Празан лист 23.1 — једини улаз у чек-листу предмета (налог 27.11.2026). Датотека настаје са првим уносом."""
         if self.rad.winfo_ismapped():
             self._sacuvaj_otvoreno()
-        self.c, self.putanja = L.nova(), None
+        self.c, self.putanja = L.nov_list(), None
+        self.sacuvano = ""
+        fajl.zapamti_otvorenu(None)
         self.izbor = LIST
         self._u_rad()
 
@@ -340,6 +347,9 @@ class Aplikacija:
             messagebox.showwarning(NAZIV, str(e), parent=self.koren)
             return False
         self.c, self.putanja = c, Path(putanja)
+        self.sacuvano = ""
+        if c["stanje"] == "u_radu":
+            fajl.zapamti_otvorenu(self.putanja)
         self.izbor = LIST
         self._u_rad()
         return True
@@ -360,7 +370,12 @@ class Aplikacija:
         samo = self.st["samo_citanje"]
         self.e_naziv.configure(state="disabled" if samo else "normal")
         self.cb_posao.configure(state="disabled" if samo else "readonly")
-        self.l_stanje.configure(text=f"Стање: {self.st['stanje_naziv']}", foreground="#2f6b3d" if samo else TEKST)
+        if self.putanja is None:
+            cuvanje = "још није сачувана"
+        else:
+            cuvanje = f"сачувано у {self.sacuvano}" if self.sacuvano else "сачувана"
+        self.l_stanje.configure(text=f"Стање: {self.st['stanje_naziv']}  ·  {cuvanje}", font=self.f["mali"],
+                                foreground="#2f6b3d" if samo or self.putanja else TEKST)
         self.b_zavrsi.configure(text="Врати у рад" if samo else "Заврши чек-листу")
         n = len(self.st["grupna"])
         self.b_grupno.configure(text=f"Сагласан сам са свим осталим предложеним одговорима ({n})",
@@ -546,11 +561,9 @@ class Aplikacija:
                                              and posao != "друго" else "")
         e = self._linija(r, "posao_drugo", 30, "нпр. размена", pocetno=pocetno, upis=self._posao_drugo)
         e.pack_configure(fill="x", expand=True)
-        # 5. ЛК, пореске пријаве
+        # 5. ЛК (ставка „Дате су им пор. пријаве“ уклоњена — налог 27.11.2026)
         r = red()
         self._kucica_kljuc(r, "lk_ugovaraca", "Имамо ЛК уговарача и супружника", "да")
-        tk.Frame(r, width=60, background=B).pack(side="left")
-        self._kucica_kljuc(r, "poreske_prijave", "Дате су им пор. пријаве да попуне", "да")
         # 6. Супружници
         traka_naslov("Супружници")
         dve = tk.Frame(papir, background=B)
@@ -1430,10 +1443,6 @@ class Ulaz:
 
     # ------------------------------------------------------------ приказ
     def prikazi(self):
-        if self.app.putanja is None and not self.app.c.get("lica") and len(self.app.c.get("odgovori") or {}) == 0:
-            self.b_nazad.pack_forget()
-        elif not self.b_nazad.winfo_ismapped():
-            self.b_nazad.pack(side="left", padx=(12, 0), after=self.b_nova)
         self.osvezi_spisak()
         self.platno.pack(side="top", fill="both", expand=True)
         self.app.koren.update_idletasks()

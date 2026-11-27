@@ -110,18 +110,24 @@ def sa_strankama(koren):
 
 def test_pocetak_je_prazan_list(koren, poruke):
     """Верзија 1.1 (налог 27.11.2026): програм почиње празним листом „Чек листа 23.1“ (као на папиру) — једини улаз у
-    чек-листу предмета; без менија „Датотека“ и без самосталног отварања последње чек-листе."""
+    чек-листу предмета; без менија „Датотека“. Верзија 1.2 (налог 27.11.2026): исплата цене „Да“, посед „Да“ и порез
+    „Купац“ су унапред означени; чек-листа која није била отворена при затварању се не отвара сама."""
     c = L.nova("ОПУ 12/2026", "продаја")
     L.dodaj_lice(c, PETAR, "продавац")
-    fajl.sacuvaj(c, fajl.novo_ime(c))
+    fajl.sacuvaj(c, fajl.novo_ime(c))  # сачувана, али није била отворена у програму
     app = gui.Aplikacija(koren)
     koren.update()
-    assert app.izbor == gui.LIST and app.putanja is None and app.c["lica"] == [] and app.c["odgovori"] == {}
+    assert app.izbor == gui.LIST and app.putanja is None and app.c["lica"] == []
+    assert app.c["odgovori"] == {"cena_isplacena": "да", "posed_predat": "да", "porez_snosi": "купац"}
+    assert "још није сачувана" in app.l_stanje.cget("text")
     assert not app.levo.winfo_ismapped() and str(koren.cget("menu")) == ""
     assert app._papir.winfo_ismapped()
     for natpis in ("Лично", "Мејлом", "Запис", "Солемнизација", "Продаја", "Имамо ЛК уговарача и супружника",
                    "Купац прихвата ризик", "Стичу сусвојину са уделима од по 1/2", "Ми"):
         assert kucica(koren, natpis) == "☐"
+    assert kucica(koren, "Да", 0) == "☐"  # „Купац првог стана“ није унапред означен
+    assert kucica(koren, "Да", 1) == "☑" and kucica(koren, "Да", 2) == "☑" and kucica(koren, "Купац") == "☑"
+    assert not [w for w in svi(koren) if isinstance(w, tk.Label) and "пор. пријаве" in str(w.cget("text"))]  # уклоњено
     assert {k for k, _ in app._celije} >= {"cena_ok", "pranje_novca", "dato_uputstvo"}  # 12 редова КОНТРОЛЕ
     assert fajl.spisak() and fajl.spisak()[0]["naziv"] == "ОПУ 12/2026"  # постојећа није отворена сама
 
@@ -362,7 +368,7 @@ def test_zapocete_cek_liste_i_nastavak_rada(koren, poruke):
     assert app.putanja == putanja and app.c["stranke"]["1"]["brak"] == "у браку" and app.izbor == gui.LIST
     app.na_ulaz()
     app.ulaz.b_nova.invoke()
-    assert app.putanja is None and app.izbor == gui.LIST and app.c["odgovori"] == {}
+    assert app.putanja is None and app.izbor == gui.LIST and set(app.c["odgovori"]) == set(L.list23.PREDEFINISANO)
 
 
 def test_zavrsene_u_svom_pregledu(koren, poruke):
@@ -379,18 +385,53 @@ def test_zavrsene_u_svom_pregledu(koren, poruke):
     assert app.st["samo_citanje"]
 
 
-def test_novo_pokretanje_pocinje_praznim_listom(koren, poruke):
-    app = sa_strankama(koren)
-    putanja = app.putanja
-    koren.destroy()
+def ponovo_pokreni():
     k2 = novi_tk()
+    app2 = gui.Aplikacija(k2)
+    k2.update()
+    return k2, app2
+
+
+def test_novo_pokretanje_nastavlja_zapocetu(koren, poruke):
+    """Налог 27.11.2026 („да чува започете чек листе“): чек-листа у раду, отворена при затварању, при новом покретању
+    се отвара на листу, са свим уносима."""
+    app = sa_strankama(koren)
+    klik(koren, "Мејлом")
+    e = polje_za(app, "kontakt")
+    e.insert(0, "ПЕТАР ПЕТРОВИЋ")  # куцано, курсор није изашао из поља — затвара се на X
+    putanja = app.putanja
+    assert "сачувано у" in app.l_stanje.cget("text")
+    app.zatvori()
+    k2, app2 = ponovo_pokreni()
     try:
-        app2 = gui.Aplikacija(k2)
-        k2.update()
-        assert app2.izbor == gui.LIST and app2.putanja is None  # не отвара сам последњу
-        assert [x["putanja"] for x in fajl.spisak()] == [putanja]
+        assert app2.putanja == putanja and app2.izbor == gui.LIST
+        assert app2.c["odgovori"]["nacin_prijema"] == "имејлом" and app2.c["odgovori"]["kontakt"] == "ПЕТАР ПЕТРОВИЋ"
+        assert [x["ime"] for x in app2.c["lica"]] == [PETAR, JELENA]
+        assert kucica(k2, "Мејлом") == "☑"
     finally:
         k2.destroy()
+
+
+def test_nova_i_zavrsena_se_ne_otvaraju_same(koren, poruke):
+    app = sa_strankama(koren)
+    prva = app.putanja
+    app.nova_cek_lista()  # нова, ништа унето
+    app.zatvori()
+    k2, app2 = ponovo_pokreni()
+    try:
+        assert app2.putanja is None  # празан лист; прва је у списку започетих
+        assert [x["putanja"] for x in fajl.spisak()] == [prva]
+        app2.otvori(prva)
+        app2.zavrsi_ili_vrati()  # завршена
+        app2.zatvori()
+    except Exception:
+        k2.destroy()
+        raise
+    k3, app3 = ponovo_pokreni()
+    try:
+        assert app3.putanja is None and fajl.spisak("zavrsena")[0]["putanja"] == prva
+    finally:
+        k3.destroy()
 
 
 def test_svi_delovi_za_sve_poslove(koren, poruke):

@@ -1,4 +1,4 @@
-# Прави Ceklista.exe на Windows-у и поставља га на страницу Releases (ознака v<верзија>) кад се на main промени
+# Прави Ceklista_<верзија>.exe на Windows-у и поставља га на страницу Releases (ознака v<верзија>) кад се на main промени
 # VERZIJA_BROJ у ceklista/__init__.py. Ако издање те верзије већ постоји, не ради ништа (ново издање = нов број).
 name: Izdanje (Ceklista.exe)
 
@@ -62,7 +62,7 @@ jobs:
         shell: pwsh
         run: |
           $izlaz = Join-Path $env:RUNNER_TEMP 'provera.txt'
-          $p = Start-Process dist\Ceklista.exe -ArgumentList '--provera', $izlaz -Wait -PassThru
+          $p = Start-Process "dist\Ceklista_${{ steps.v.outputs.verzija }}.exe" -ArgumentList '--provera', $izlaz -Wait -PassThru
           Get-Content $izlaz
           if ($p.ExitCode -ne 0) { throw "Samoprovera nije prosla" }
 
@@ -74,9 +74,10 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Чек-листа ${{ steps.v.outputs.verzija }}
           body: |
-            Преузмите **Ceklista.exe** (испод, „Assets“) и покрените га двокликом — инсталација није потребна.
+            Преузмите **Ceklista_${{ steps.v.outputs.verzija }}.exe** (испод, „Assets“) и покрените га двокликом — инсталација није потребна.
+            Започете чек-листе из ранијих верзија остају (Документи\Чек-листе) — стару верзију програма можете обрисати.
             Ако Windows прикаже „Windows је заштитио рачунар“: „Више информација“ → „Ипак покрени“.
             Упутство: README.md. Измене: CHANGELOG.md.
 
             Чек-листа · © 2026 Slavia Brothers, Geneva. All rights reserved.
-          files: dist/Ceklista.exe
+          files: dist/Ceklista_${{ steps.v.outputs.verzija }}.exe

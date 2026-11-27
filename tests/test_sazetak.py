@@ -89,3 +89,12 @@ def test_lista_23_u_sazetku():
     assert "Правни посао: друго (уговор о грађењу)" in t
     assert "ЛИСТ 23.1 — ОСТАЛЕ СТАВКЕ" in t and "Купац прихвата ризик: важи" in t and "Телефон: 060 000 000" in t
     assert "Купац није у браку" not in t.split("НИЈЕ ПРОВЕРЕНО")[0]  # неозначена кућица није избор
+
+
+def test_unapred_oznaceno_u_sazetku_samo_za_prodaju():
+    c = L.nov_list()
+    L.postavi_posao(c, "поклон")
+    assert "Посед предат" not in S.kao_tekst(S.sazetak(c))
+    L.postavi_posao(c, "продаја")
+    t = S.kao_tekst(S.sazetak(c))
+    assert "Посед предат: да" in t and "Порез на пренос апсолутних права сноси (договор странака): купац" in t

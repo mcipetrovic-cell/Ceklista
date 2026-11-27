@@ -33,11 +33,12 @@ jobs:
         run: |
           pyinstaller --noconfirm Ceklista.spec
           $izlaz = Join-Path $env:RUNNER_TEMP 'provera.txt'
-          $p = Start-Process dist\Ceklista.exe -ArgumentList '--provera', $izlaz -Wait -PassThru
+          $exe = (Get-ChildItem dist\Ceklista_*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $exe -ArgumentList '--provera', $izlaz -Wait -PassThru
           Get-Content $izlaz
           if ($p.ExitCode -ne 0) { throw "Samoprovera nije prosla" }
       - uses: actions/upload-artifact@v4
         with:
           name: Ceklista-proba
-          path: dist/Ceklista.exe
+          path: dist/Ceklista_*.exe
           retention-days: 7

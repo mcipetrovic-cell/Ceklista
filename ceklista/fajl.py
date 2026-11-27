@@ -1,7 +1,8 @@
 """Чување чек-листе: свака чек-листа је једна датотека .ceklista (JSON), сачувана после сваке измене.
 
 - Подразумевана фасцикла: Документи\\Чек-листе (на Windows-у права фасцикла „Документи“, и кад је у OneDrive-у).
-- Почетни екран набраја чек-листе из те фасцикле (spisak); програм нема других подешавања.
+- Списак започетих набраја чек-листе из те фасцикле (spisak); ознака `.otvorena` у истој фасцикли памти која је
+  чек-листа била отворена, па се при новом покретању наставља (otvorena). Програм нема других подешавања.
 - Упис је атомски (привремена датотека, па замена): прекид струје не оставља пола датотеке.
 За пробе: CEKLISTA_FASCIKLA замењује фасциклу чек-листа."""
 
@@ -136,6 +137,31 @@ def ucitaj(putanja: Path) -> dict:
     except (OSError, UnicodeDecodeError, ValueError):
         raise L.GreskaUnosa(f"Чек-листа не може да се прочита (оштећена датотека): {putanja.name}") from None
     return sredi(d)
+
+
+# ---------------------------------------------------------------- отворена чек-листа (наставак при покретању)
+OTVORENA = ".otvorena"  # у фасцикли чек-листа: име датотеке која је била отворена кад је програм затворен
+
+
+def zapamti_otvorenu(putanja: Path | None, u: Path | None = None) -> None:
+    oznaka = (Path(u) if u else fascikla()) / OTVORENA
+    try:
+        if putanja is None:
+            oznaka.unlink(missing_ok=True)
+        else:
+            upisi_atomski(oznaka, str(Path(putanja).resolve()).encode("utf-8"))
+    except OSError:
+        pass  # ознака није битна за податке: чек-листа је већ сачувана у својој датотеци
+
+
+def otvorena(u: Path | None = None) -> Path | None:
+    """Чек-листа која је била отворена при затварању програма, ако још постоји и у раду је; иначе None."""
+    oznaka = (Path(u) if u else fascikla()) / OTVORENA
+    try:
+        putanja = Path(oznaka.read_text(encoding="utf-8").strip())
+        return putanja if putanja.is_file() and ucitaj(putanja)["stanje"] == "u_radu" else None
+    except (OSError, ValueError, L.GreskaUnosa):
+        return None
 
 
 # ---------------------------------------------------------------- започете чек-листе (почетни екран)

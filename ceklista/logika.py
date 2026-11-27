@@ -34,7 +34,7 @@ OZNAKE = (NIJE_PRIMENLJIVO, RADNJA)  # статуси које запослен�
 POREKLA = {"izvor": "податак из проверљивог извора", "uneto": "податак који је корисник раније унео",
            "podrazumevano": "подразумевани предложени одговор", "proveriti": "чињеница коју корисник посебно проверава",
            "nije_primenljivo": "питање које није применљиво"}
-NACINI = {"pojedinacno": "појединачно", "grupno": "групно"}
+NACINI = {"pojedinacno": "појединачно", "grupno": "групно", "predefinisano": "унапред означено на листу"}
 STANJA = {"u_radu": "у раду", "zavrsena": "завршена"}
 NAPOMENA = P.NAPOMENA
 NESIGURNO = P.NESIGURNO
@@ -205,6 +205,16 @@ def nova(naziv: str = "", posao: str = "") -> dict:
          "stanje": "u_radu", "napravljeno": t, "izmenjeno": t, "zavrseno": ""}
     if posao:
         postavi_posao(c, posao)
+    return c
+
+
+def nov_list(c: dict | None = None) -> dict:
+    """Нова чек-листа са листа 23.1: унапред означени одговори (list23.PREDEFINISANO), уз траг „унапред означено“."""
+    c = c or nova()
+    t = sada()
+    for k, v in list23.PREDEFINISANO.items():
+        c["odgovori"][k] = v
+        c["trag"][k] = {"vreme": t, "nacin": "predefinisano", "ime": "", "poreklo": "podrazumevano"}
     return c
 
 
