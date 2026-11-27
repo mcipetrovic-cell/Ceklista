@@ -357,11 +357,11 @@ def test_zapocete_cek_liste_i_nastavak_rada(koren, poruke):
     koren.update()
     e = polje_za(app, "cena")
     e.insert(0, "99.000")  # куцано, курсор није изашао из поља
-    dugme(koren, ttk.Button, "Започете чек-листе").invoke()
+    dugme(koren, ttk.Button, "Сачуване чек-листе").invoke()
     koren.update()
     assert app.ulaz.platno.winfo_ismapped() and not app.rad.winfo_ismapped() and app.ulaz.slika is not None
     assert fajl.ucitaj(putanja)["odgovori"]["cena"] == "99.000"
-    assert app.ulaz.l_broj.cget("text") == "Започете чек-листе  1"
+    assert app.ulaz.l_broj.cget("text") == "Сачуване чек-листе  1"
     redovi = [app.ulaz.tabela.item(i, "values") for i in app.ulaz.tabela.get_children()]
     assert redovi[0][1:4] == (f"{PETAR}, {JELENA}", "продаја", "у раду")
     app.ulaz.b_nazad.invoke()
@@ -375,18 +375,64 @@ def test_zapocete_cek_liste_i_nastavak_rada(koren, poruke):
     assert app.putanja is None and app.izbor == gui.LIST and set(app.c["odgovori"]) == set(L.list23.PREDEFINISANO)
 
 
-def test_zavrsene_u_svom_pregledu(koren, poruke):
+def test_sacuvane_zavrsene_i_ispravka(koren, poruke):
+    """Налог 27.11.2026: попуњена чек-листа остаје сачувана за даљи рад и исправке — и кад је завршена."""
     app = sa_strankama(koren)
     app.zavrsi_ili_vrati()
     app.na_ulaz()
     koren.update()
-    assert app.ulaz.l_broj.cget("text") == "Започете чек-листе  0"
-    assert app.ulaz.prazno.winfo_ismapped() and str(app.ulaz.b_nastavi.cget("state")) == "disabled"
-    app.ulaz.dugmad_filtera["zavrsena"].invoke()
+    u = app.ulaz
+    assert u.filter == "sve" and u.l_broj.cget("text") == "Сачуване чек-листе  1"  # завршене се виде одмах
+    assert u.dugmad_filtera["u_radu"].cget("text") == "У раду (0)" and u.dugmad_filtera["zavrsena"].cget("text") == "Завршене (1)"
+    u.dugmad_filtera["u_radu"].invoke()
     koren.update()
-    assert app.ulaz.l_broj.cget("text") == "Започете чек-листе  1" and app.ulaz.b_nastavi.cget("text") == "Отвори"
-    app.ulaz.nastavi()
+    assert u.prazno.winfo_ismapped() and str(u.b_nastavi.cget("state")) == "disabled"
+    u.dugmad_filtera["zavrsena"].invoke()
+    koren.update()
+    assert u.l_broj.cget("text") == "Сачуване чек-листе  1" and u.b_nastavi.cget("text") == "Отвори"
+    u.nastavi()
+    koren.update()
     assert app.st["samo_citanje"]
+    dugme(koren, ttk.Button, "Врати у рад").invoke()  # исправка завршене: дугме на врху листа
+    koren.update()
+    assert app.c["stanje"] == "u_radu"
+    klik(koren, "Мејлом")
+    assert fajl.ucitaj(app.putanja)["odgovori"]["nacin_prijema"] == "имејлом"
+
+
+def test_trazi_u_sacuvanim(koren, poruke):
+    for naziv, ime in (("ОПУ 12/2026", PETAR), ("ОПУ 13/2026", JELENA)):
+        c = L.nov_list()
+        L.postavi_naziv(c, naziv)
+        L.dodaj_lice(c, ime, "продавац")
+        fajl.sacuvaj(c, fajl.novo_ime(c))
+    app = gui.Aplikacija(koren)
+    app.na_ulaz()
+    koren.update()
+    u = app.ulaz
+    assert len(u.tabela.get_children()) == 2
+    u.e_trazi.insert(0, "јелена")
+    koren.update()
+    redovi = [u.tabela.item(i, "values") for i in u.tabela.get_children()]
+    assert [r[0] for r in redovi] == ["ОПУ 13/2026"] and u.dugmad_filtera["sve"].cget("text") == "Све (1)"
+
+
+def test_dugme_sacuvaj_i_naziv_datoteke(koren, poruke):
+    """„Сачувај“ уписује и поље у које се управо куца; назив датотеке прати „Предмет / опис“."""
+    app = zapocni(koren)
+    klik(koren, "Мејлом")
+    stara = app.putanja
+    app.v_naziv.set("ОПУ 12/2026 Петровић")  # курсор није изашао из поља
+    e = polje_za(app, "kontakt")
+    e.insert(0, "060 000 000")
+    dugme(koren, ttk.Button, "Сачувај").invoke()
+    koren.update()
+    assert app.putanja != stara and not stara.exists() and "ОПУ 12 2026 Петровић" in app.putanja.name
+    c = fajl.ucitaj(app.putanja)
+    assert c["naziv"] == "ОПУ 12/2026 Петровић" and c["odgovori"]["kontakt"] == "060 000 000"
+    assert app.l_stanje.cget("text").startswith("✓ сачувано у") and app.putanja.name in app.l_stanje.cget("text")
+    assert fajl.otvorena() == app.putanja.resolve()  # наставак при следећем покретању прати ново име
+    assert [x["putanja"] for x in fajl.spisak()] == [app.putanja]
 
 
 def ponovo_pokreni():

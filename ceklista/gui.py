@@ -212,9 +212,9 @@ class Aplikacija:
         z.pack(side="top", fill="x")
         ttk.Button(z, text="Нова чек-листа", style="Malo.TButton", command=self.nova_cek_lista).grid(
             row=0, column=0, sticky="we", padx=(0, 14))
-        ttk.Button(z, text="Започете чек-листе", style="Malo.TButton", command=self.na_ulaz).grid(
+        ttk.Button(z, text="Сачуване чек-листе", style="Malo.TButton", command=self.na_ulaz).grid(
             row=1, column=0, sticky="we", padx=(0, 14), pady=(4, 0))
-        ttk.Label(z, text=NAZIV, style="Zaglavlje.TLabel", font=self.f["naslov"]).grid(row=0, column=1, rowspan=2,
+        ttk.Label(z, text=NAZIV, style="Zaglavlje.TLabel", font=self.f["podnaslov"]).grid(row=0, column=1, rowspan=2,
                                                                                          sticky="w", padx=(0, 18))
         ttk.Label(z, text="Предмет / опис", style="Zaglavlje.TLabel").grid(row=0, column=2, sticky="w")
         self.v_naziv = tk.StringVar()
@@ -231,8 +231,13 @@ class Aplikacija:
         self.e_popunio.grid(row=1, column=4, sticky="w", padx=(0, 12))
         self.l_stanje = ttk.Label(z, text="", style="Zaglavlje.TLabel", font=self.f["jaki"])
         self.l_stanje.grid(row=0, column=5, sticky="e")
-        self.b_zavrsi = ttk.Button(z, text="Заврши чек-листу", command=self.zavrsi_ili_vrati)
-        self.b_zavrsi.grid(row=1, column=5, sticky="e")
+        desno = ttk.Frame(z, style="Zaglavlje.TFrame")
+        desno.grid(row=1, column=5, sticky="e")
+        self.b_sacuvaj = ttk.Button(desno, text="Сачувај", command=self.sacuvaj_sada)
+        self.b_sacuvaj.pack(side="left", padx=(0, 6))
+        self.b_zavrsi = ttk.Button(desno, text="Заврши чек-листу", command=self.zavrsi_ili_vrati)
+        self.b_zavrsi.pack(side="left")
+        k.bind_all("<Control-s>", lambda _e: self.sacuvaj_sada())
         z.columnconfigure(1, weight=1)
         z.columnconfigure(4, weight=1)
         self.e_naziv.bind("<FocusOut>", lambda e: self._sacuvaj_naziv())
@@ -290,10 +295,22 @@ class Aplikacija:
             if self.putanja is None:
                 self.putanja = fajl.novo_ime(self.c, self._fascikla())
             fajl.sacuvaj(self.c, self.putanja)
+            self.putanja = fajl.uskladi_ime(self.c, self.putanja)  # назив датотеке прати „Предмет / опис“
             fajl.zapamti_otvorenu(self.putanja if self.c.get("stanje") == "u_radu" else None)
             self.sacuvano = dt.datetime.now().strftime("%H.%M")
         except OSError as e:
             messagebox.showerror(NAZIV, f"Чек-листа није сачувана: {e}", parent=self.koren)
+
+    def sacuvaj_sada(self):
+        """Дугме „Сачувај“ (Ctrl+S): све се и иначе чува одмах; ово уписује и поља у која се управо куца и јавља где
+        је чек-листа (налог 27.11.2026: попуњена чек-листа да остане за даљи рад и исправке)."""
+        if not self.rad.winfo_ismapped():
+            return
+        self._sacuvaj_otvoreno()
+        self.sacuvaj()
+        self.osvezi()
+        if self.putanja is not None:
+            self.l_stanje.configure(text=f"✓ сачувано у {self.sacuvano}: {self.putanja.name}", foreground="#2f6b3d")
 
     def _fascikla(self) -> Path:
         return self.putanja.parent if self.putanja else fajl.fascikla()
@@ -328,7 +345,7 @@ class Aplikacija:
 
     # ------------------------------------------------------------ почетак, започете чек-листе, отварање
     def na_ulaz(self):
-        """Започете чек-листе: наставак рада или нова чек-листа."""
+        """Сачуване чек-листе: наставак рада, исправка или нова чек-листа."""
         if self.rad.winfo_ismapped():
             self._sacuvaj_otvoreno()
         self.rad.pack_forget()
@@ -519,6 +536,12 @@ class Aplikacija:
         Да | Не, парафи. Сваки клик је одговор на исто питање као у детаљним целинама; ништа се не уписује само."""
         u = self.sadrzaj.unutra
         samo = self.st["samo_citanje"]
+        if samo:
+            zavrsena = tk.Frame(u, background="#e3f0da", highlightbackground="#8fc08a", highlightthickness=1, padx=12, pady=8)
+            zavrsena.pack(fill="x", pady=(0, 8))
+            tk.Label(zavrsena, text="Ова чек-листа је завршена и сачувана — само за читање. За даљи рад или исправку:",
+                     background="#e3f0da", foreground="#2f5a2a", font=self.f["jaki"]).pack(side="left")
+            ttk.Button(zavrsena, text="Врати у рад", command=self.zavrsi_ili_vrati).pack(side="left", padx=10)
         traka = ttk.Frame(u, style="Pozadina.TFrame")
         traka.pack(fill="x", pady=(0, 8))
         self._oznaka(traka, "Лист се попуњава кликом, као на папиру. Све остало (странке, детаљна питања, сажетак) је у "
@@ -1448,7 +1471,8 @@ class Aplikacija:
             "3. „Странке и детаљна питања →“: странке са својством и сва питања чек-листе по целинама (као у Сави).\n"
             "4. „Сагласан сам са свим осталим предложеним одговорима“ прво показује списак, па тек онда уписује.\n"
             "5. „Сажетак →“: копирајте или сачувајте у Word.\n"
-            "6. „Започете чек-листе“: наставак рада на ранијој чек-листи; „Нова чек-листа“: празан лист.\n\n"
+            "6. „Сачуване чек-листе“: све попуњене чек-листе (у раду и завршене) за даљи рад или исправку; "
+            "„Нова чек-листа“: празан лист. Завршену за исправку: „Врати у рад“.\n\n"
             f"Све се чува одмах, у фасцикли {fajl.fascikla()}."), parent=self.koren)
 
     def o_programu(self):
@@ -1471,16 +1495,16 @@ def putanja_podatka(ime: str) -> Path:
 
 
 class Ulaz:
-    """Започете чек-листе, у изгледу Саве (Сислијева „Ливада“ под крем велом): наставак рада (У раду / Завршене /
-    Све) или нова чек-листа. Нова чек-листа почиње празним листом 23.1 — једини улаз у предмет."""
+    """Сачуване чек-листе, у изгледу Саве (Сислијева „Ливада“ под крем велом): све попуњене чек-листе (Све / У раду /
+    Завршене), претрага, наставак рада или исправка; нова чек-листа почиње празним листом 23.1 — једини улаз у предмет."""
 
     KARTICA = "#fdfbf6"
     IVICA = "#e4dccb"
-    FILTERI = (("u_radu", "У раду"), ("zavrsena", "Завршене"), ("sve", "Све"))
+    FILTERI = (("sve", "Све"), ("u_radu", "У раду"), ("zavrsena", "Завршене"))
 
     def __init__(self, app: Aplikacija):
         self.app, k, f = app, app.koren, app.f
-        self.filter = "u_radu"
+        self.filter = "sve"
         self.platno = tk.Canvas(k, background=KREM, highlightthickness=0, borderwidth=0)
         try:
             self.slika = tk.PhotoImage(file=str(putanja_podatka("livada.png")))
@@ -1505,11 +1529,11 @@ class Ulaz:
         self.k2 = tk.Frame(self.platno, background=bg, padx=18, pady=14)
         gore = tk.Frame(self.k2, background=bg)
         gore.pack(anchor="w", fill="x")
-        self.l_broj = tk.Label(gore, text="Започете чек-листе", font=(f["naslov"][0], 13, "bold"), foreground=TEKST,
+        self.l_broj = tk.Label(gore, text="Сачуване чек-листе", font=(f["naslov"][0], 13, "bold"), foreground=TEKST,
                                background=bg)
         self.l_broj.pack(side="left")
         filteri = tk.Frame(self.k2, background=bg)
-        filteri.pack(anchor="w", pady=(8, 8))
+        filteri.pack(anchor="w", fill="x", pady=(8, 8))
         self.dugmad_filtera = {}
         for kod, naziv in self.FILTERI:
             b = tk.Button(filteri, text=naziv, font=f["osnovni"], relief="solid", borderwidth=1, padx=10, pady=3,
@@ -1517,6 +1541,13 @@ class Ulaz:
                           command=lambda kod=kod: self.postavi_filter(kod))
             b.pack(side="left", padx=(0, 6))
             self.dugmad_filtera[kod] = b
+        self.v_trazi = tk.StringVar()
+        self.e_trazi = tk.Entry(filteri, textvariable=self.v_trazi, width=34, relief="solid", borderwidth=1,
+                                font=f["osnovni"])
+        self.e_trazi.pack(side="right", ipady=3)
+        tk.Label(filteri, text="Тражи (предмет, странка, контакт):", background=bg, foreground="#5b6577").pack(
+            side="right", padx=(0, 6))
+        self.v_trazi.trace_add("write", lambda *_a: self.osvezi_spisak())  # и куцање и налепљен текст
         okvir = tk.Frame(self.k2, background=bg)
         okvir.pack(fill="both", expand=True)
         kolone = (("predmet", "Предмет", 230), ("stranke", "Чија (странке)", 230), ("posao", "Правни посао", 140),
@@ -1532,7 +1563,7 @@ class Ulaz:
         klizac.pack(side="right", fill="y")
         self.tabela.bind("<Double-1>", lambda _e: self.nastavi())
         self.tabela.bind("<Return>", lambda _e: self.nastavi())
-        self.prazno = tk.Label(self.k2, text="Нема чек-листа у овом прегледу.", background=bg, foreground="#5b6577")
+        self.prazno = tk.Label(self.k2, text="Нема сачуваних чек-листа у овом прегледу.", background=bg, foreground="#5b6577")
         dole = tk.Frame(self.k2, background=bg)
         dole.pack(fill="x", pady=(10, 0))
         self.b_nastavi = tk.Button(dole, text="Настави рад", command=self.nastavi, font=f["jaki"], background="white",
@@ -1540,6 +1571,11 @@ class Ulaz:
         self.b_nastavi.pack(side="left")
         tk.Label(dole, text=f"Чек-листе се чувају у фасцикли {fajl.fascikla()}", background=bg, foreground="#8a8f99",
                  font=f["mali"]).pack(side="left", padx=12)
+        fascikla = tk.Label(dole, text="Отвори фасциклу", background=bg, foreground="#2c6aa0", font=f["mali"],
+                            cursor="hand2")
+        fascikla.pack(side="left")
+        fascikla.bind("<Button-1>", lambda _e: (fajl.fascikla().mkdir(parents=True, exist_ok=True),
+                                                otvori_spolja(fajl.fascikla())))
         self.pomoc = (("Кратко упутство", app.uputstvo), ("О програму", app.o_programu))
         self.platno.bind("<Configure>", lambda _e: self.rasporedi())
         self._putanje: dict[str, Path] = {}
@@ -1567,7 +1603,7 @@ class Ulaz:
         x = (sirina - kolona) // 2
         # наслов као у Сави („Чек-листа претходна провера за правни посао“) — текст на платну, преко слике
         naslov = p.create_text(x, 26, text="Чек-листа", anchor="nw", font=self.f_naslov, fill="#23324f", tags="tekst")
-        p.create_text(p.bbox(naslov)[2] + 10, p.bbox(naslov)[3] - 6, text="започете чек-листе", anchor="sw",
+        p.create_text(p.bbox(naslov)[2] + 10, p.bbox(naslov)[3] - 6, text="сачуване чек-листе", anchor="sw",
                       font=self.f_podnaslov, fill="#23324f", tags="tekst")
         y = p.bbox(naslov)[3] + 16
         for w, razmak, kartica in ((self.k1, 18, True), (self.k2, 14, True)):
@@ -1592,11 +1628,17 @@ class Ulaz:
         p.tag_lower("pozadina")
 
     def osvezi_spisak(self):
-        liste = fajl.spisak(self.filter)
-        self.l_broj.configure(text=f"Започете чек-листе  {len(liste)}")
+        sve = fajl.spisak("sve")
+        trazi = " ".join(self.v_trazi.get().split()).casefold()
+        if trazi:
+            sve = [x for x in sve if trazi in " ".join([x["naziv"], *x["stranke"], x["kontakt"], x["posao"],
+                                                         x["popunio"]]).casefold()]
+        broj = {"sve": len(sve), **{k: sum(1 for x in sve if x["stanje"] == k) for k in ("u_radu", "zavrsena")}}
+        liste = sve if self.filter == "sve" else [x for x in sve if x["stanje"] == self.filter]
+        self.l_broj.configure(text=f"Сачуване чек-листе  {len(liste)}")
         for kod, b in self.dugmad_filtera.items():
             izabran = kod == self.filter
-            b.configure(relief="solid", borderwidth=2 if izabran else 1,
+            b.configure(text=f"{dict(self.FILTERI)[kod]} ({broj[kod]})", relief="solid", borderwidth=2 if izabran else 1,
                         highlightbackground="#23324f" if izabran else self.IVICA,
                         font=self.app.f["jaki"] if izabran else self.app.f["osnovni"])
         self.tabela.delete(*self.tabela.get_children())
@@ -1610,7 +1652,7 @@ class Ulaz:
         if liste:
             self.prazno.pack_forget()
             self.tabela.selection_set(self.tabela.get_children()[0])
-            self.b_nastavi.configure(state="normal", text="Настави рад" if self.filter != "zavrsena" else "Отвори")
+            self.b_nastavi.configure(state="normal", text="Отвори" if self.filter == "zavrsena" else "Настави рад / отвори")
         else:
             self.prazno.pack(anchor="w", before=self.b_nastavi.master)
             self.b_nastavi.configure(state="disabled")

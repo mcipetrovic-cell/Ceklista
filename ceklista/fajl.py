@@ -74,15 +74,39 @@ def _bezbedno_ime(tekst: str) -> str:
     return t[:80]
 
 
+def osnova_imena(c: dict) -> str:
+    """„Чек-листа <опис> 26.11.2026 14.30“ — опис из поља „Предмет / опис“, датум и време кад је чек-листа започета."""
+    try:
+        kada = dt.datetime.fromisoformat(str(c.get("napravljeno") or ""))
+    except ValueError:
+        kada = dt.datetime.now()
+    opis = _bezbedno_ime(c.get("naziv") or "")
+    return "Чек-листа" + (f" {opis}" if opis else "") + f" {kada:%d.%m.%Y %H.%M}"
+
+
 def novo_ime(c: dict, u: Path | None = None) -> Path:
     """„Чек-листа <опис> 26.11.2026 14.30.ceklista“ у фасцикли чек-листа; не замењује постојећу."""
     u = Path(u) if u else fascikla()
-    opis = _bezbedno_ime(c.get("naziv") or "")
-    osnova = "Чек-листа" + (f" {opis}" if opis else "") + f" {dt.datetime.now():%d.%m.%Y %H.%M}"
+    osnova = osnova_imena(c)
     putanja, n = u / f"{osnova}{EKSTENZIJA}", 2
     while putanja.exists():
         putanja, n = u / f"{osnova} ({n}){EKSTENZIJA}", n + 1
     return putanja
+
+
+def uskladi_ime(c: dict, putanja: Path) -> Path:
+    """Назив датотеке прати „Предмет / опис“ (налог 27.11.2026: попуњена чек-листа да се нађе за даљи рад и исправке).
+    Ако се опис променио, датотека се преименује; иначе остаје. Враћа важећу путању."""
+    putanja = Path(putanja)
+    osnova = osnova_imena(c)
+    if putanja.stem == osnova or re.fullmatch(re.escape(osnova) + r" \(\d+\)", putanja.stem):
+        return putanja
+    nova = novo_ime(c, putanja.parent)
+    try:
+        putanja.rename(nova)
+    except OSError:
+        return putanja  # отворена у другом програму или без права: остаје старо име, подаци су сачувани
+    return nova
 
 
 def ime_sazetka(c: dict, nastavak: str) -> str:

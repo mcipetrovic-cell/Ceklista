@@ -84,7 +84,7 @@ def provera(izlaz: str | None) -> int:
             app.ulaz.b_nova.invoke()
             koren.update()
             koren.destroy()
-            return f"лист 23.1, сви делови прозора, започете чек-листе ({n})"
+            return f"лист 23.1, сви делови прозора, сачуване чек-листе ({n})"
 
         for naziv, fn in (("питања", pitanja), ("пример чек-листе", primer), ("сажетак", sazetak), ("Word", docx),
                           ("датотека .ceklista", datoteka), ("прозор", prozor)):

@@ -132,3 +132,15 @@ def test_otvorena_cek_lista(prodaja):
     assert fajl.otvorena() is None  # обрисана
     fajl.zapamti_otvorenu(None)
     assert not (fajl.fascikla() / fajl.OTVORENA).exists()
+
+
+def test_naziv_datoteke_prati_opis(prodaja, tmp_path):
+    """Налог 27.11.2026: попуњена чек-листа се налази по опису — назив датотеке прати „Предмет / опис“."""
+    a = fajl.sacuvaj(prodaja, fajl.novo_ime(prodaja))
+    assert fajl.uskladi_ime(prodaja, a) == a  # опис се није променио
+    L.postavi_naziv(prodaja, "ОПУ 14/2026: Марковић")
+    b = fajl.uskladi_ime(prodaja, a)
+    assert not a.exists() and b.exists() and b.name.startswith("Чек-листа ОПУ 14 2026 Марковић ")
+    assert fajl.ucitaj(b)["odgovori"] == prodaja["odgovori"]
+    druga = dict(prodaja)
+    assert fajl.novo_ime(druga) != b  # исто име се не замењује
