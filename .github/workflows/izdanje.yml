@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+env:
+  PYTHONUTF8: "1"  # ћирилица у испису на Windows конзоли (иначе cp1252 → UnicodeEncodeError)
+  PYTHONIOENCODING: utf-8
+
 jobs:
   windows:
     runs-on: windows-latest

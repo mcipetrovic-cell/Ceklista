@@ -89,7 +89,9 @@ def provera(izlaz: str | None) -> int:
     izvestaj = "\n".join(redovi) + ("\nСВЕ ЈЕ У РЕДУ\n" if ok else "\nПРОВЕРА НИЈЕ ПРОШЛА\n")
     if izlaz:
         Path(izlaz).write_text(izvestaj, encoding="utf-8")
-    else:
+    elif sys.stdout is not None:  # Ceklista.exe без конзоле нема stdout
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         print(izvestaj)
     return 0 if ok else 1
 

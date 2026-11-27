@@ -15,6 +15,8 @@ RACUN = re.compile(r"(?<!\d)\d{3}-\d{13}-\d{2}(?!\d)")
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows конзола (cp1252) не исписује ћирилицу
     greske = []
     sys.path.insert(0, str(KOREN))
     import ceklista

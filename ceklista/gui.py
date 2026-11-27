@@ -303,15 +303,24 @@ class Aplikacija:
             self.radi(L.postavi_popunio, self.c, self.v_popunio.get())
 
     def _sacuvaj_otvoreno(self):
-        """Поље у коме се управо куца уписује се пре изласка, отварања друге чек-листе и сажетка."""
-        w = self.koren.focus_get()
-        upis = self._potvrde_polja.get(str(w)) if w is not None else None
-        if upis:
-            upis()
-        if w is self.e_naziv:
+        """Сва поља у која је куцано, а нису уписана (курсор није изашао из поља), уписују се пре изласка, отварања
+        друге чек-листе, сажетка и парафа — не само поље у коме је курсор (фокус на Windows-у није поуздан).
+        Поље без измене се не дира."""
+        # прво заглавље: освежавање после уписа поља враћа заглавље на сачувано стање
+        if self.v_naziv.get().strip() != (self.c.get("naziv") or ""):
             self._sacuvaj_naziv()
-        if w is self.e_popunio:
+        if self.v_popunio.get().strip() != (self.c.get("popunio") or ""):
             self._sacuvaj_popunio()
+        try:
+            fokus = self.koren.focus_get()
+        except (KeyError, tk.TclError):
+            fokus = None
+        prvo = self._potvrde_polja.get(str(fokus)) if fokus is not None else None
+        for upis in ([prvo] if prvo else []) + [u for u in list(self._potvrde_polja.values()) if u is not prvo]:
+            try:
+                upis()
+            except tk.TclError:
+                pass  # поље је нестало при поновном исцртавању стране; његов упис је већ обављен
 
     # ------------------------------------------------------------ датотеке
     def nova(self):

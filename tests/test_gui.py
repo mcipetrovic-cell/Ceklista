@@ -68,9 +68,7 @@ def test_prazan_pocetak_i_nova_stranka(koren, poruke):
     app = gui.Aplikacija(koren)
     assert app.izbor == gui.LICA and app.putanja is None
     app._e_nova.insert(0, PETAR)
-    app._e_nova.focus_force()
-    koren.update()
-    app._e_nova.event_generate("<Return>")
+    dugme(koren, ttk.Button, "Додај странку").invoke()
     koren.update()
     assert [x["ime"] for x in app.c["lica"]] == [PETAR]
     assert app.putanja and app.putanja.parent == fajl.fascikla() and app.putanja.is_file()  # сачувано одмах
@@ -122,12 +120,12 @@ def test_polje_se_upisuje_pri_izlasku(koren, poruke):
     app.idi("V")
     koren.update()
     e = polje_za(app, "cena")
-    e.insert(0, "120.000")
-    e.focus_force()
-    koren.update()
+    e.insert(0, "120.000")  # курсор није изашао из поља (нема FocusOut)
+    app.v_popunio.set("Мила")
     putanja = app.putanja
     app.zatvori()
-    assert fajl.ucitaj(putanja)["odgovori"]["cena"] == "120.000"
+    c = fajl.ucitaj(putanja)
+    assert c["odgovori"]["cena"] == "120.000" and c["popunio"] == "Мила"
 
 
 def test_grupna_potvrda_preko_spiska(koren, poruke):
