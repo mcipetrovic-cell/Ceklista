@@ -12,7 +12,7 @@ import pytest
 
 from ceklista import fajl, logika as L, sazetak as S, word
 
-from .conftest import PETAR
+from .conftest import JELENA, PETAR
 
 
 # ---------------------------------------------------------------- Word
@@ -96,15 +96,20 @@ def test_sredjivanje_procitanog(tmp_path):
     L.stanje(c)  # прочитана чек-листа се приказује
 
 
-def test_poslednja_i_skorasnje(prodaja, tmp_path):
-    assert fajl.poslednja() is None
-    a = fajl.sacuvaj(prodaja, tmp_path / "a.ceklista")
-    b = fajl.sacuvaj(prodaja, tmp_path / "b.ceklista")
-    fajl.zapamti_otvorenu(a)
-    fajl.zapamti_otvorenu(b)
-    fajl.zapamti_otvorenu(a)
-    assert fajl.poslednja() == a and fajl.skorasnje() == [a, b]
-    b.unlink()
-    assert fajl.skorasnje() == [a]
-    fajl.zapamti_otvorenu(None)
-    assert fajl.poslednja() is None
+def test_spisak_zapocetih(prodaja, tmp_path):
+    """Почетни екран: чек-листе из фасцикле, новије прве, по стању; оштећена датотека се прескаче."""
+    assert fajl.spisak() == []
+    a = fajl.sacuvaj(prodaja, fajl.novo_ime(prodaja))
+    druga = L.nova("ОПУ 13/2026", "поклон")
+    L.dodaj_lice(druga, JELENA, "поклонопримац")
+    L.zavrsi(druga)
+    b = fajl.sacuvaj(druga, fajl.fascikla() / "b.ceklista")
+    (fajl.fascikla() / "losa.ceklista").write_text("{", encoding="utf-8")
+    u_radu = fajl.spisak()
+    assert [x["putanja"] for x in u_radu] == [a]
+    x = u_radu[0]
+    assert x["naziv"] == "ОПУ 12/2026" and x["stranke"] == [PETAR, JELENA] and x["posao"] == "продаја"
+    assert x["stanje_naziv"] == "у раду"
+    assert [x["putanja"] for x in fajl.spisak("zavrsena")] == [b]
+    assert {x["putanja"] for x in fajl.spisak("sve")} == {a, b}
+    assert fajl.spisak("sve")[0]["putanja"] == b  # новија прва

@@ -26,7 +26,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from . import pitanja as P
+from . import list23, pitanja as P
 
 DA, NE, NIJE_PRIMENLJIVO, NIJE_PROVERENO, RADNJA = "da", "ne", "nije_primenljivo", "nije_provereno", "potrebna_radnja"
 STATUSI = dict(P.STATUSI_MODULA)
@@ -62,15 +62,19 @@ def sada() -> str:
 
 # ---------------------------------------------------------------- питања
 
+# Питања Саве (препис) и нове ставке листа 23.1 (list23.py) — заједно чине чек-листу програма
+DEFINICIJA = list(P.DEFINICIJA) + [list23.ODELJAK]
+
+
 def _pitanja(deo: str):
-    for o in P.DEFINICIJA:
+    for o in DEFINICIJA:
         for q in o.get(deo, []):
             yield o, q
 
 
 OPSTA = {q["k"]: (o, q) for o, q in _pitanja("pitanja")}
 PO_STRANCI = {q["k"]: (o, q) for o, q in _pitanja("po_stranci")}
-ODELJCI = [(o["id"], o["odeljak"]) for o in P.DEFINICIJA] + [(NEP, "Провера непокретности")]
+ODELJCI = [(o["id"], o["odeljak"]) for o in DEFINICIJA] + [(NEP, "Провера непокретности")]
 
 
 def kljuc(k: str, sid: str = "") -> str:
@@ -107,7 +111,7 @@ def vidljivo(uslov, odgovori: dict, opsti: dict | None = None) -> bool:
 
 def pitanje(k: str) -> dict:
     """Питање по кључу; „ako“ спаја услов целине и питања (као cek_lista.pitanje)."""
-    for o in P.DEFINICIJA:
+    for o in DEFINICIJA:
         for q in (o.get("pitanja") or []) + (o.get("po_stranci") or []):
             if q["k"] == k:
                 uslovi = [list(x) for x in _uslovi(o.get("ako"))] + [list(x) for x in _uslovi(q.get("ako"))]
@@ -374,6 +378,9 @@ def _predlozi(c: dict, odg: dict) -> dict:
         if k not in P.LIST_2020 and (k, "") not in pred and k not in odg and predlog(k, posao or "—"):
             pred[(k, "")] = {"v": predlog(k, posao or "—"), "poreklo": "podrazumevano",
                              "osnov": "предлог канцеларије" + (f" за посао „{posao}“" if k in (P.PREDLOZI.get(posao) or {}) else "")}
+    for k, v in list23.PREDLOZI.items():  # лева колона нове ставке КОНТРОЛЕ листа 23.1
+        if k not in odg and k not in (c.get("oznake") or {}):
+            pred[(k, "")] = {"v": v, "poreklo": "podrazumevano", "osnov": "подразумевани (леви) одговор листа 23.1"}
     # Личне исправе: Сава „да“ предлаже само кад су исправе свих лица уписане у предмет — овај програм их не види.
     pred.pop(("lk_ugovaraca", ""), None)
     pravna = [ime_lica(x) for x in lica if x.get("pravno_lice")]
@@ -448,7 +455,7 @@ def stanje(c: dict) -> dict:
     pred = _predlozi(c, odg)
     lica_po_id = {x["id"]: ime_lica(x) for x in lica}
     odeljci, sve = [], []
-    for o in P.DEFINICIJA:
+    for o in DEFINICIJA:
         opsta, po_licima = [], []
         for q in o.get("pitanja", []):
             k = q["k"]
@@ -691,7 +698,7 @@ def provera(c: dict) -> list[dict]:
     odg, po_str, lica = c.get("odgovori") or {}, c.get("stranke") or {}, c.get("lica") or []
     oznake = c.get("oznake") or {}
     out = []
-    for o in P.DEFINICIJA:
+    for o in DEFINICIJA:
         vid_o = vidljivo(o.get("ako"), odg)
         for q in o.get("pitanja", []):
             k = q["k"]

@@ -20,7 +20,6 @@ PETAR, JELENA = "ПЕТАР ПЕТРОВИЋ", "ЈЕЛЕНА ЈОВАНОВИЋ"
 @pytest.fixture(autouse=True)
 def fascikle(tmp_path, monkeypatch):
     monkeypatch.setenv("CEKLISTA_FASCIKLA", str(tmp_path / "cekliste"))
-    monkeypatch.setenv("CEKLISTA_LOKALNO", str(tmp_path / "lokalno"))
     return tmp_path
 
 

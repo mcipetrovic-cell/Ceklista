@@ -336,3 +336,33 @@ def test_sva_pitanja_iz_save_su_u_programu():
     opsta = {q["k"] for o in P.DEFINICIJA for q in o.get("pitanja", [])}
     assert opsta <= kljucevi and set(P.PROVERE_NEPOKRETNOSTI) <= kljucevi
     assert sum(len(o.get("pitanja", [])) + len(o.get("po_stranci", [])) for o in P.DEFINICIJA) == 95
+
+
+# ---------------------------------------------------------------- лист 23.1 (налог 27.11.2026)
+
+def test_stavke_lista_23(prodaja):
+    """Ставке листа 23.1 којих у Сави нема су питања као и остала: кућица, линија, избор; без услова приказа."""
+    c = prodaja
+    for k, v in (("primljeno", "27.11.2026 09:30"), ("kontakt", "ПЕТАР ПЕТРОВИЋ"), ("poreske_prijave", "да"),
+                 ("kupac_prihvata_rizik", "да"), ("kupac_prvi_stan", "не"), ("sacinio_list", "ми"), ("dato_uputstvo", "НЕ")):
+        L.odgovori(c, k, v)
+    assert c["odgovori"]["primljeno"] == "2026-11-27T09:30"
+    assert stavka(c, "kupac_prihvata_rizik")["status"] == L.DA and stavka(c, "susvojina_pola")["status"] == L.NE
+    assert stavka(c, "sacinio_list")["primenljivost"] == "da"
+    with pytest.raises(L.GreskaUnosa):
+        L.odgovori(c, "sacinio_list", "нотар")
+
+
+def test_dato_uputstvo_je_predlog_leve_kolone(prodaja):
+    s = stavka(prodaja, "dato_uputstvo")
+    assert s["predlog"]["v"] == "ДА" and s["status"] == L.NIJE_PROVERENO
+    assert any(x["k"] == "dato_uputstvo" for x in L.stanje(prodaja)["grupna"])
+
+
+def test_kontrola_ista_kao_sava_i_sa_listom_23(prodaja):
+    """Нова ставка листа не мења КОНТРОЛУ из Саве (спремно за читање)."""
+    L.grupna_potvrda(prodaja, L.stanje(prodaja)["grupna"])
+    L.odgovori(prodaja, "lk_ugovaraca", "да")
+    L.odgovori(prodaja, "forma", "солемнизација")
+    L.odgovori(prodaja, "dato_uputstvo", None)
+    assert L.kontrola(prodaja)["spremno"]

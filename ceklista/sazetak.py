@@ -57,7 +57,8 @@ def sazetak(c: dict) -> dict:
     odg = c.get("odgovori") or {}
     zaglavlje = {
         "naziv": st["naziv"],
-        "posao": st["posao"] or L.NEODREDJEN,
+        "posao": (f"друго ({odg['posao_drugo']})" if st["posao"] == "друго" and odg.get("posao_drugo") else st["posao"])
+                 or L.NEODREDJEN,
         "forma": odg.get("forma") or "није одређена",
         "stanje": st["stanje_naziv"],
         "popunio": st["popunio"],

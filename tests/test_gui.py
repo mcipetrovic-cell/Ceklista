@@ -1,10 +1,9 @@
-"""Прозор (прави Tk; на Linux-у под Xvfb): унос странака, одговор кликом, поља за текст, групна потврда, точкић
+"""Прозор (прави Tk; на Linux-у под Xvfb): лист 23.1 као почетак, унос странака, одговор кликом, поља за текст, групна потврда, точкић
 миша изнад падајућег списка, сажетак, Word, ново покретање. Поруке (messagebox) се бележе уместо да чекају клик."""
 
 from __future__ import annotations
 
 import tkinter as tk
-from pathlib import Path
 from tkinter import ttk
 
 import pytest
@@ -54,25 +53,147 @@ def polje_za(app, oznaka):
     return app._polja[oznaka]
 
 
-def sa_strankama(koren):
+def klikni(koren, w):
+    """Клик мишем на део листа: страна се прво помери до њега (ван видљивог дела платна Tk га не приказује)."""
+    app_platno = next(x for x in svi(koren) if isinstance(x, tk.Canvas) and x.winfo_ismapped())
+    unutra = app_platno.nametowidget(app_platno.itemcget(app_platno.find_all()[0], "window"))
+    y = w.winfo_rooty() - unutra.winfo_rooty()
+    app_platno.yview_moveto(max(0.0, (y - 150) / max(1, unutra.winfo_height())))
+    koren.update()
+    w.event_generate("<Button-1>")
+    koren.update()
+
+
+def klik(koren, natpis, n=0):
+    """Клик на кућицу, ћелију или „парафирај“ на листу (натпис као на папиру)."""
+    nadjeni = [w for w in svi(koren) if isinstance(w, tk.Label) and str(w.cget("text")) == natpis]
+    assert len(nadjeni) > n, (natpis, len(nadjeni))
+    klikni(koren, nadjeni[n])
+
+
+def kucica(koren, natpis, n=0) -> str:
+    """☑ или ☐ поред натписа на листу."""
+    w = [w for w in svi(koren) if isinstance(w, tk.Label) and str(w.cget("text")) == natpis][n]
+    return w.master.kucica.cget("text")
+
+
+def zapocni(koren, posao="Продаја"):
+    """Као корисник: програм почиње празним листом 23.1; правни посао кликом на листу."""
     app = gui.Aplikacija(koren)
-    app.v_posao.set("продаја")
-    app.cb_posao.event_generate("<<ComboboxSelected>>")
+    koren.update()
+    assert app.rad.winfo_ismapped() and app.izbor == gui.LIST and not app.ulaz.platno.winfo_ismapped()
+    if posao:
+        klik(koren, posao)
+    return app
+
+
+def sa_strankama(koren):
+    app = zapocni(koren)
     app.radi(L.dodaj_lice, app.c, PETAR, "продавац")
     app.radi(L.dodaj_lice, app.c, JELENA, "купац")
     koren.update()
     return app
 
 
-def test_prazan_pocetak_i_nova_stranka(koren, poruke):
+def test_pocetak_je_prazan_list(koren, poruke):
+    """Верзија 1.1 (налог 27.11.2026): програм почиње празним листом „Чек листа 23.1“ (као на папиру) — једини улаз у
+    чек-листу предмета; без менија „Датотека“ и без самосталног отварања последње чек-листе."""
+    c = L.nova("ОПУ 12/2026", "продаја")
+    L.dodaj_lice(c, PETAR, "продавац")
+    fajl.sacuvaj(c, fajl.novo_ime(c))
     app = gui.Aplikacija(koren)
-    assert app.izbor == gui.LICA and app.putanja is None
+    koren.update()
+    assert app.izbor == gui.LIST and app.putanja is None and app.c["lica"] == [] and app.c["odgovori"] == {}
+    assert not app.levo.winfo_ismapped() and str(koren.cget("menu")) == ""
+    assert app._papir.winfo_ismapped()
+    for natpis in ("Лично", "Мејлом", "Запис", "Солемнизација", "Продаја", "Имамо ЛК уговарача и супружника",
+                   "Купац прихвата ризик", "Стичу сусвојину са уделима од по 1/2", "Ми"):
+        assert kucica(koren, natpis) == "☐"
+    assert {k for k, _ in app._celije} >= {"cena_ok", "pranje_novca", "dato_uputstvo"}  # 12 редова КОНТРОЛЕ
+    assert fajl.spisak() and fajl.spisak()[0]["naziv"] == "ОПУ 12/2026"  # постојећа није отворена сама
+
+
+def test_klik_na_listu_je_odgovor(koren, poruke):
+    app = zapocni(koren)
+    assert app.c["odgovori"]["posao"] == "продаја" and kucica(koren, "Продаја") == "☑"
+    for natpis in ("Мејлом", "Запис", "Имамо ЛК уговарача и супружника", "Продавац је наследио / поклон",
+                   "Продавац купио пре брака — доказ", "Купац прихвата ризик"):
+        klik(koren, natpis)
+    o = app.c["odgovori"]
+    assert (o["nacin_prijema"], o["forma"], o["lk_ugovaraca"], o["nasledio"], o["kupac_prihvata_rizik"]) == \
+        ("имејлом", "јавнобележнички запис", "да", ["да", "спб"], "да")
+    klik(koren, "Лично")  # друга кућица исте групе замењује прву
+    klik(koren, "Продавац је наследио / поклон")  # поновни клик уклања
+    assert o["nacin_prijema"] == "лично" and o["nasledio"] == ["спб"]
+    klikni(koren, app._celije[("mesto", "терен")])  # КОНТРОЛА „Излази се на лице места“ — десно „Да“
+    assert o["mesto"] == "терен"
+    klikni(koren, app._celije[("dato_uputstvo", "ДА")])  # нова ставка листа 23.1
+    klik(koren, "Да", 0)  # „Купац првог стана“ — Да
+    assert o["dato_uputstvo"] == "ДА" and o["kupac_prvi_stan"] == "да"
+    klikni(koren, app._celije[("mesto", "терен")])  # поновни клик на изабрану ћелију — без одговора
+    assert "mesto" not in o
+    sacuvano = fajl.ucitaj(app.putanja)["odgovori"]  # сачувано одмах
+    assert sacuvano["dato_uputstvo"] == "ДА" and "mesto" not in sacuvano
+    assert not poruke
+
+
+def test_linije_lista(koren, poruke):
+    app = zapocni(koren)
+    e = polje_za(app, "cena")
+    e.event_generate("<FocusIn>")  # уклања сиви савет
+    e.insert(0, "85.000")
+    e.event_generate("<FocusOut>")
+    assert app.c["odgovori"]["cena"] == "85.000"
+    e = polje_za(app, "posao_drugo")
+    e.event_generate("<FocusIn>")
+    e.insert(0, "Размена")  # посао из Саве — препознат
+    e.event_generate("<FocusOut>")
+    koren.update()
+    assert app.c["odgovori"]["posao"] == "размена" and "posao_drugo" not in app.c["odgovori"]
+    e = polje_za(app, "posao_drugo")
+    e.delete(0, "end")
+    e.insert(0, "уговор о грађењу")
+    e.event_generate("<FocusOut>")
+    koren.update()
+    assert app.c["odgovori"]["posao"] == "друго" and app.c["odgovori"]["posao_drugo"] == "уговор о грађењу"
+    e = polje_za(app, "termin")
+    e.event_generate("<FocusIn>")
+    e.insert(0, "сутра")
+    e.event_generate("<FocusOut>")
+    assert "termin" not in app.c["odgovori"] and any("датум и време" in p for p in poruke)
+
+
+def test_neprimenljivo_na_listu_je_sivo(koren, poruke):
+    app = zapocni(koren, "Поклон")
+    assert str(polje_za(app, "cena").cget("state")) == "disabled"  # цена само за продају
+    assert str(polje_za(app, "motiv").cget("state")) == "normal"
+    klik(koren, "Продавац је наследио / поклон")  # поклон: важи
+    assert app.c["odgovori"]["nasledio"] == ["да"]
+
+
+def test_paraf_na_listu(koren, poruke):
+    app = zapocni(koren)
+    klik(koren, "парафирај", 2)  # редом: примио, враћена документација, спремно, па Читао, ПИС, Плава, а/а
+    assert any("Попунио/ла" in p for p in poruke) and not app.c["potvrde"]
+    app.v_popunio.set("Мила")
+    app._sacuvaj_popunio()
+    koren.update()
+    klik(koren, "парафирај", 3)  # прва ћелија „Важно!!!“ — Читао
+    assert app.c["potvrde"]["citao"]["ime"] == "Мила"
+    klik(koren, "парафирај", 2)  # спремно за читање — КОНТРОЛА још не пролази
+    assert "spremno" not in app.c["potvrde"] and any("не може на читање" in p for p in poruke)
+
+
+def test_zapoceta_pa_nova_stranka(koren, poruke):
+    app = zapocni(koren, "Поклон")
+    assert app.putanja is not None  # први клик на листу је први унос: датотека постоји
+    dugme(koren, ttk.Button, "Странке и детаљна питања →").invoke()
+    koren.update()
+    assert app.izbor == gui.LICA and app.levo.winfo_ismapped()
     app._e_nova.insert(0, PETAR)
     dugme(koren, ttk.Button, "Додај странку").invoke()
     koren.update()
     assert [x["ime"] for x in app.c["lica"]] == [PETAR]
-    assert app.putanja and app.putanja.parent == fajl.fascikla() and app.putanja.is_file()  # сачувано одмах
-    assert fajl.poslednja() == app.putanja
     assert not poruke
 
 
@@ -205,34 +326,65 @@ def test_sazetak_kopiraj_i_word(koren, poruke, tmp_path):
     assert p.is_file() and any(str(p) in x for x in poruke)  # отворен у Word-у
 
 
-def test_novo_pokretanje_vraca_poslednju(koren, poruke):
+def test_zapocete_cek_liste_i_nastavak_rada(koren, poruke):
     app = sa_strankama(koren)
     app.radi(L.odgovori, app.c, "1.brak", "у браку")
+    putanja = app.putanja
+    app.idi("V")
+    koren.update()
+    e = polje_za(app, "cena")
+    e.insert(0, "99.000")  # куцано, курсор није изашао из поља
+    dugme(koren, ttk.Button, "Започете чек-листе").invoke()
+    koren.update()
+    assert app.ulaz.platno.winfo_ismapped() and not app.rad.winfo_ismapped() and app.ulaz.slika is not None
+    assert fajl.ucitaj(putanja)["odgovori"]["cena"] == "99.000"
+    assert app.ulaz.l_broj.cget("text") == "Започете чек-листе  1"
+    redovi = [app.ulaz.tabela.item(i, "values") for i in app.ulaz.tabela.get_children()]
+    assert redovi[0][1:4] == (f"{PETAR}, {JELENA}", "продаја", "у раду")
+    app.ulaz.b_nazad.invoke()
+    assert app.putanja == putanja and app.rad.winfo_ismapped()
+    app.na_ulaz()
+    app.ulaz.b_nastavi.invoke()  # прва (једина) је изабрана
+    koren.update()
+    assert app.putanja == putanja and app.c["stranke"]["1"]["brak"] == "у браку" and app.izbor == gui.LIST
+    app.na_ulaz()
+    app.ulaz.b_nova.invoke()
+    assert app.putanja is None and app.izbor == gui.LIST and app.c["odgovori"] == {}
+
+
+def test_zavrsene_u_svom_pregledu(koren, poruke):
+    app = sa_strankama(koren)
+    app.zavrsi_ili_vrati()
+    app.na_ulaz()
+    koren.update()
+    assert app.ulaz.l_broj.cget("text") == "Започете чек-листе  0"
+    assert app.ulaz.prazno.winfo_ismapped() and str(app.ulaz.b_nastavi.cget("state")) == "disabled"
+    app.ulaz.dugmad_filtera["zavrsena"].invoke()
+    koren.update()
+    assert app.ulaz.l_broj.cget("text") == "Започете чек-листе  1" and app.ulaz.b_nastavi.cget("text") == "Отвори"
+    app.ulaz.nastavi()
+    assert app.st["samo_citanje"]
+
+
+def test_novo_pokretanje_pocinje_praznim_listom(koren, poruke):
+    app = sa_strankama(koren)
     putanja = app.putanja
     koren.destroy()
     k2 = tk.Tk()
     try:
         app2 = gui.Aplikacija(k2)
-        assert app2.putanja == putanja and app2.c["stranke"]["1"]["brak"] == "у браку"
-        app2.nova()
-        assert app2.putanja is None and app2.c["lica"] == [] and fajl.poslednja() is None
+        k2.update()
+        assert app2.izbor == gui.LIST and app2.putanja is None  # не отвара сам последњу
+        assert [x["putanja"] for x in fajl.spisak()] == [putanja]
     finally:
         k2.destroy()
-
-
-def test_otvaranje_datoteke_iz_argumenta(koren, poruke, tmp_path):
-    c = L.nova("ПРОБА", "поклон")
-    L.dodaj_lice(c, PETAR, "поклонодавац")
-    p = fajl.sacuvaj(c, tmp_path / "x.ceklista")
-    app = gui.Aplikacija(koren, p)
-    assert app.putanja == Path(p) and app.c["naziv"] == "ПРОБА"
 
 
 def test_svi_delovi_za_sve_poslove(koren, poruke):
     app = sa_strankama(koren)
     for posao in [L.NEODREDJEN, "продаја", "поклон", "доживотно издржавање", "завештање", "друго"]:
         app.radi(L.postavi_posao, app.c, posao)
-        for oid in [x[0] for x in L.ODELJCI] + [gui.LICA, gui.POTVRDE, gui.SAZETAK]:
+        for oid in [gui.LIST] + [x[0] for x in L.ODELJCI] + [gui.LICA, gui.POTVRDE, gui.SAZETAK]:
             app.idi(oid)
             koren.update_idletasks()
     assert not poruke

@@ -1,9 +1,9 @@
 """Чување чек-листе: свака чек-листа је једна датотека .ceklista (JSON), сачувана после сваке измене.
 
 - Подразумевана фасцикла: Документи\\Чек-листе (на Windows-у права фасцикла „Документи“, и кад је у OneDrive-у).
-- Подешавања програма (последња отворена чек-листа, скорашње): %LOCALAPPDATA%\\Ceklista\\podesavanja.json.
+- Почетни екран набраја чек-листе из те фасцикле (spisak); програм нема других подешавања.
 - Упис је атомски (привремена датотека, па замена): прекид струје не оставља пола датотеке.
-За пробе: CEKLISTA_FASCIKLA и CEKLISTA_LOKALNO замењују те две фасцикле."""
+За пробе: CEKLISTA_FASCIKLA замењује фасциклу чек-листа."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from pathlib import Path
 from . import logika as L
 
 EKSTENZIJA = ".ceklista"
-NAJVISE_SKORASNJIH = 8
 NAJVECA_DATOTEKA = 5 * 1024 * 1024
 
 
@@ -66,15 +65,6 @@ def dokumenti() -> Path:
 def fascikla() -> Path:
     izbor = os.environ.get("CEKLISTA_FASCIKLA")
     return Path(izbor) if izbor else dokumenti() / "Чек-листе"
-
-
-def lokalno() -> Path:
-    izbor = os.environ.get("CEKLISTA_LOKALNO")
-    if izbor:
-        return Path(izbor)
-    if sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
-        return Path(os.environ["LOCALAPPDATA"]) / "Ceklista"
-    return Path.home() / ".local" / "share" / "Ceklista"
 
 
 def _bezbedno_ime(tekst: str) -> str:
@@ -148,42 +138,22 @@ def ucitaj(putanja: Path) -> dict:
     return sredi(d)
 
 
-# ---------------------------------------------------------------- подешавања
+# ---------------------------------------------------------------- започете чек-листе (почетни екран)
 
-def _podesavanja_putanja() -> Path:
-    return lokalno() / "podesavanja.json"
-
-
-def podesavanja() -> dict:
-    try:
-        d = json.loads(_podesavanja_putanja().read_text(encoding="utf-8"))
-        return d if isinstance(d, dict) else {}
-    except (OSError, ValueError):
-        return {}
-
-
-def sacuvaj_podesavanja(d: dict) -> None:
-    try:
-        upisi_atomski(_podesavanja_putanja(), json.dumps(d, ensure_ascii=False, indent=1).encode("utf-8"))
-    except OSError:
-        pass  # подешавања нису битна за рад: чек-листа је већ сачувана у својој датотеци
-
-
-def zapamti_otvorenu(putanja: Path | None) -> None:
-    d = podesavanja()
-    if putanja:
-        p = str(Path(putanja))
-        d["poslednja"] = p
-        d["skorasnje"] = [p] + [x for x in d.get("skorasnje") or [] if x != p][:NAJVISE_SKORASNJIH - 1]
-    else:
-        d.pop("poslednja", None)
-    sacuvaj_podesavanja(d)
-
-
-def skorasnje() -> list[Path]:
-    return [Path(x) for x in podesavanja().get("skorasnje") or [] if isinstance(x, str) and Path(x).is_file()]
-
-
-def poslednja() -> Path | None:
-    p = podesavanja().get("poslednja")
-    return Path(p) if isinstance(p, str) and Path(p).is_file() else None
+def spisak(stanje: str = "u_radu", u: Path | None = None) -> list[dict]:
+    """Чек-листе из фасцикле, новије прве: [{putanja, naziv, stranke, posao, stanje, stanje_naziv, popunio,
+    izmenjeno}]. stanje: u_radu, zavrsena или sve. Датотека која се не може прочитати се прескаче."""
+    u = Path(u) if u else fascikla()
+    out = []
+    for putanja in sorted(u.glob("*" + EKSTENZIJA)) if u.is_dir() else []:
+        try:
+            c = ucitaj(putanja)
+        except L.GreskaUnosa:
+            continue
+        if stanje != "sve" and c["stanje"] != stanje:
+            continue
+        out.append({"putanja": putanja, "naziv": c["naziv"], "stranke": [L.ime_lica(x) for x in c["lica"]],
+                    "kontakt": str(c["odgovori"].get("kontakt") or ""),
+                    "posao": c["odgovori"].get("posao") or "", "stanje": c["stanje"],
+                    "stanje_naziv": L.STANJA[c["stanje"]], "popunio": c["popunio"], "izmenjeno": c["izmenjeno"]})
+    return sorted(out, key=lambda x: x["izmenjeno"], reverse=True)

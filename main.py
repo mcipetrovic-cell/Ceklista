@@ -1,7 +1,6 @@
 """Покретање програма „Чек-листа“ (Ceklista.exe).
 
-    Ceklista.exe                      — отвара последњу чек-листу (или нову)
-    Ceklista.exe <датотека>.ceklista  — отвара ту чек-листу (двоклик на датотеку)
+    Ceklista.exe                      — празан лист „Чек листа 23.1“ (једини улаз у чек-листу предмета)
     Ceklista.exe --provera <излаз>    — самопровера пакета (за GitHub Actions): питања, сажетак, Word, датотеке, прозор
 """
 
@@ -31,7 +30,6 @@ def provera(izlaz: str | None) -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["CEKLISTA_FASCIKLA"] = str(Path(tmp) / "cekliste")
-        os.environ["CEKLISTA_LOKALNO"] = str(Path(tmp) / "lokalno")
         from ceklista import VERZIJA, fajl, logika as L, pitanja as P, sazetak as S, word
 
         stanje = {}
@@ -77,11 +75,16 @@ def provera(izlaz: str | None) -> int:
             koren = tk.Tk()
             koren.withdraw()
             app = gui.Aplikacija(koren)
-            for oid in [x[0] for x in L.ODELJCI] + [gui.POTVRDE, gui.SAZETAK, gui.LICA]:
+            assert app.izbor == gui.LIST and app._papir.winfo_exists(), "програм не почиње листом 23.1"
+            assert app.ulaz.slika is not None, "позадина списка започетих (data/livada.png) није учитана"
+            for oid in [x[0] for x in L.ODELJCI] + [gui.POTVRDE, gui.SAZETAK, gui.LICA, gui.LIST]:
                 app.idi(oid)
+            app.na_ulaz()
+            n = len(app.ulaz.tabela.get_children())
+            app.ulaz.b_nova.invoke()
             koren.update()
             koren.destroy()
-            return "сви делови прозора"
+            return f"лист 23.1, сви делови прозора, започете чек-листе ({n})"
 
         for naziv, fn in (("питања", pitanja), ("пример чек-листе", primer), ("сажетак", sazetak), ("Word", docx),
                           ("датотека .ceklista", datoteka), ("прозор", prozor)):

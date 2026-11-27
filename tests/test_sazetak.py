@@ -77,3 +77,15 @@ def test_grupno_potvrdjeni_predlozi_su_u_sazetku(prodaja):
     L.grupna_potvrda(prodaja, L.stanje(prodaja)["grupna"])
     t = S.kao_tekst(S.sazetak(prodaja))
     assert "Цена у целости исплаћена: да" in t and "Место овере: канцеларија" in t
+
+
+def test_lista_23_u_sazetku():
+    c = L.nova()
+    L.postavi_posao(c, "друго")
+    for k, v in (("posao_drugo", "уговор о грађењу"), ("kupac_prihvata_rizik", "да"), ("telefon", "060 000 000"),
+                 ("dato_uputstvo", "ДА")):
+        L.odgovori(c, k, v)
+    t = S.kao_tekst(S.sazetak(c))
+    assert "Правни посао: друго (уговор о грађењу)" in t
+    assert "ЛИСТ 23.1 — ОСТАЛЕ СТАВКЕ" in t and "Купац прихвата ризик: важи" in t and "Телефон: 060 000 000" in t
+    assert "Купац није у браку" not in t.split("НИЈЕ ПРОВЕРЕНО")[0]  # неозначена кућица није избор

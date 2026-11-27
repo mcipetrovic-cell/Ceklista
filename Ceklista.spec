@@ -33,7 +33,7 @@ verzija_datoteka.write_text(f"""VSVersionInfo(
 a = Analysis(
     ["main.py"],
     pathex=[str(KOREN)],
-    datas=[("data/Ceklista.ico", "data")],
+    datas=[("data/Ceklista.ico", "data"), ("data/livada.png", "data")],
     hiddenimports=[],
     excludes=["pytest", "PIL", "numpy", "unittest", "pydoc", "lib2to3", "test"],
     noarchive=False,
