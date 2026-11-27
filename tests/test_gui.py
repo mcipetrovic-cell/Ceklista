@@ -173,16 +173,19 @@ def test_linije_lista(koren, poruke):
     e.insert(0, "85.000")
     e.event_generate("<FocusOut>")
     assert app.c["odgovori"]["cena"] == "85.000"
-    e = polje_za(app, "posao_drugo")
-    e.event_generate("<FocusIn>")
-    e.insert(0, "Размена")  # посао из Саве — препознат
-    e.event_generate("<FocusOut>")
+    w = app._posao_drugo_w
+    w._ocisti_savet()
+    w.e.insert(0, "Размена")  # посао из Саве — препознат и кад се укуца цео (без избора предлога)
+    w.sacuvaj_ako_treba()  # излазак из поља
     koren.update()
     assert app.c["odgovori"]["posao"] == "размена" and "posao_drugo" not in app.c["odgovori"]
-    e = polje_za(app, "posao_drugo")
-    e.delete(0, "end")
-    e.insert(0, "уговор о грађењу")
-    e.event_generate("<FocusOut>")
+    w = app._posao_drugo_w
+    assert w.tekst() == "размена"
+    w.e.delete(0, "end")
+    w.e.insert(0, "уговор о грађењу")  # нема га међу предлозима — уписује се какав јесте
+    w.filtriraj()
+    assert not w.otvoren()
+    w.potvrdi()
     koren.update()
     assert app.c["odgovori"]["posao"] == "друго" and app.c["odgovori"]["posao_drugo"] == "уговор о грађењу"
     e = polje_za(app, "termin")
@@ -584,3 +587,64 @@ def test_paraf_bez_pitanja_i_ponistavanje(koren, poruke):
     dijalog.potvrdi()
     koren.update()
     assert app.c["potvrde"]["primio"]["ime"] == "Иван" and not any("Парафирати" in p for p in poruke)
+
+
+def test_drugo_padajuci_predlozi(koren, poruke):
+    """Налог 27.11.2026: „Друго:“ — падајући списак; док се куца назив правног посла излазе предлози (послови из Саве),
+    а Enter бира предлог."""
+    app = zapocni(koren)
+    w = app._posao_drugo_w
+    w.prikazi_sve()  # „▾“: цео списак, без продаје, поклона и доживотног (они имају кућице)
+    assert w.otvoren() and len(w.stavke) == 21 and "продаја" not in w.stavke and "размена" in w.stavke
+    w.zatvori()
+    w._ocisti_savet()
+    w.e.insert(0, "раз")
+    w.filtriraj()
+    assert w.otvoren() and w.stavke[0] == "размена" and w.lb.get(0) == "размена"
+    w.potvrdi()  # Enter — први предлог
+    koren.update()
+    assert app.c["odgovori"]["posao"] == "размена" and not w.otvoren()
+    assert app._posao_drugo_w.tekst() == "размена"
+    assert "Уговарачи су једни друге увели у посед?  " in {str(x.cget("text")) for x in svi(koren) if isinstance(x, tk.Label)}
+    w = app._posao_drugo_w
+    w.e.delete(0, "end")
+    w.e.insert(0, "zalo")  # латиницом
+    w.filtriraj()
+    assert w.stavke == ["заложна изјава"]
+    w.e.delete(0, "end")
+    w.e.insert(0, "у")
+    w.filtriraj()
+    prvi, drugi = w.stavke[0], w.stavke[1]
+    assert prvi == "уступање и расподела"  # прво послови који почињу уписом
+    w.pomeri(1)  # ↓
+    assert w.izabran() == drugi
+    w.potvrdi()
+    koren.update()
+    assert app.c["odgovori"]["posao"] == drugi
+    w = app._posao_drugo_w
+    w.e.delete(0, "end")
+    w.e.insert(0, "зај")
+    w.filtriraj()
+    w.zatvori()  # Esc — затвара предлоге, ништа не уписује
+    assert app.c["odgovori"]["posao"] == drugi
+    klik(koren, "Продаја")  # кућица и даље ради; поље „Друго“ се празни
+    assert app.c["odgovori"]["posao"] == "продаја" and app._posao_drugo_w.tekst() == ""
+    assert not poruke
+
+
+def test_drugo_kucanje_tastaturom_i_enter(koren, poruke):
+    """Прави притисци тастера: кад се отвори списак предлога, тастатура остаје у пољу (на X/Windows прозор предлога
+    је преузимао тастатуру, па се после првог слова даље куцање и Enter губили)."""
+    app = zapocni(koren)
+    w = app._posao_drugo_w
+    w.e.focus_force()
+    koren.update()
+    for slovo in "zal":
+        w.e.event_generate("<KeyPress>", keysym=slovo)
+        w.e.event_generate("<KeyRelease>", keysym=slovo)
+        koren.update()
+    assert w.v.get() == "zal" and w.otvoren() and w.stavke == ["заложна изјава"]
+    assert koren.focus_get() is w.e
+    w.e.event_generate("<KeyPress>", keysym="Return")
+    koren.update()
+    assert app.c["odgovori"]["posao"] == "заложна изјава"

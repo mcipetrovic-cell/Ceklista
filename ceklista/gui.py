@@ -81,6 +81,7 @@ class Pomicno(ttk.Frame):
         self.bind_all("<Button-4>", self._tocak, add="+")
         self.bind_all("<Button-5>", self._tocak, add="+")
         self.na_promenu_sirine = None
+        self.pre_pomeranja = None  # нпр. затварање падајућих предлога
 
     def _sirina(self, e):
         self.platno.itemconfigure(self._prozor, width=e.width)
@@ -101,6 +102,8 @@ class Pomicno(ttk.Frame):
     def _tocak(self, e):
         if not self._ispod_misa():
             return
+        if self.pre_pomeranja:
+            self.pre_pomeranja()
         if getattr(e, "num", None) == 4:
             korak = -3
         elif getattr(e, "num", None) == 5:
@@ -267,10 +270,17 @@ class Aplikacija:
         self.sadrzaj = Pomicno(telo)
         self.sadrzaj.pack(side="left", fill="both", expand=True, padx=(4, 10), pady=10)
         self.sadrzaj.na_promenu_sirine = self._prelomi
+        self.sadrzaj.pre_pomeranja = self._zatvori_predloge
+        self._posao_drugo_w = None
         for dogadjaj in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             # точкић изнад падајућег списка би тихо променио одговор (правни посао, својство) — помера страну
             k.bind_class("TCombobox", dogadjaj, self._tocak_strane)
             k.bind_class("Text", dogadjaj, self._tocak_strane)
+
+    def _zatvori_predloge(self):
+        w = getattr(self, "_posao_drugo_w", None)
+        if w is not None:
+            w.zatvori()
 
     def _tocak_strane(self, e):
         self.sadrzaj._tocak(e)
@@ -500,6 +510,8 @@ class Aplikacija:
         self._polja.clear()
         self._celije.clear()
         self._osvezivaci.clear()
+        self._zatvori_predloge()
+        self._posao_drugo_w = None
         if self.izbor == LIST:
             self.levo.pack_forget()  # лист заузима целу ширину, као на папиру
         elif not self.levo.winfo_ismapped():
@@ -598,8 +610,15 @@ class Aplikacija:
         for naziv, vrednost in list23.POSLOVI_NA_LISTU:
             self._kucica(r, naziv, lambda v=vrednost: self._vrednost("posao") == v, lambda v=vrednost: self._posao_sa_lista(v))
         tekst(r, "   Друго:")
-        e = self._linija(r, "posao_drugo", 30, "нпр. размена", vrednost=self._posao_drugo_tekst, upis=self._posao_drugo)
-        e.pack_configure(fill="x", expand=True)
+        # падајући списак правних послова из Саве (без три кућице изнад); Enter бира предлог (налог 27.11.2026)
+        na_listu = {v for _n, v in list23.POSLOVI_NA_LISTU}
+        w = PoljeSaPredlozima(self, r, [x for x in P.POSLOVI if x not in na_listu], self._posao_drugo_tekst(),
+                              lambda naziv: self.radi(self._posao_drugo, naziv), "почните да куцате, па Enter",
+                              not self.st["samo_citanje"])
+        w.okvir.pack(side="left", fill="x", expand=True, padx=(2, 0))
+        self._posao_drugo_w = w
+        self._potvrde_polja[str(w.e)] = w.sacuvaj_ako_treba
+        self._polja["posao_drugo"] = w.e
         # 5. ЛК (ставка „Дате су им пор. пријаве“ уклоњена — налог 27.11.2026)
         r = red()
         self._kucica_kljuc(r, "lk_ugovaraca", "Имамо ЛК уговарача и супружника", "да")
@@ -1486,6 +1505,224 @@ def putanja_podatka(ime: str) -> Path:
     """Датотека из фасцикле data (и у Ceklista.exe, где је у привременој фасцикли PyInstaller-а)."""
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "data" / ime
 
+
+
+LATINICA = {"lj": "љ", "nj": "њ", "dž": "џ", "dj": "ђ", "a": "а", "b": "б", "c": "ц", "č": "ч", "ć": "ћ", "d": "д",
+            "đ": "ђ", "e": "е", "f": "ф", "g": "г", "h": "х", "i": "и", "j": "ј", "k": "к", "l": "л", "m": "м", "n": "н",
+            "o": "о", "p": "п", "r": "р", "s": "с", "š": "ш", "t": "т", "u": "у", "v": "в", "z": "з", "ž": "ж"}
+
+
+def u_cirilicu(tekst: str) -> str:
+    """Латиница → ћирилица за претрагу предлога („razmena“ налази „размена“); ћирилица остаје каква јесте."""
+    t, out, i = tekst.casefold(), [], 0
+    while i < len(t):
+        dva = t[i:i + 2]
+        if dva in LATINICA:
+            out.append(LATINICA[dva])
+            i += 2
+        else:
+            out.append(LATINICA.get(t[i], t[i]))
+            i += 1
+    return "".join(out)
+
+
+def nadji_predloge(tekst: str, predlozi) -> list[str]:
+    """Предлози који садрже упис (ћирилицом или латиницом, без обзира на велика слова); прво они који почињу њиме."""
+    t = " ".join(tekst.split()).casefold()
+    if not t:
+        return list(predlozi)
+    tc = u_cirilicu(t)
+    nadjeni = [p for p in predlozi if t in p.casefold() or tc in p.casefold()]
+    return sorted(nadjeni, key=lambda p: (not (p.casefold().startswith(t) or p.casefold().startswith(tc)),
+                                          nadjeni.index(p)))
+
+
+class PoljeSaPredlozima:
+    """Поље „Друго:“ на листу (налог јавног бележника 27.11.2026): падајући списак правних послова из Саве — док се
+    куца, испод поља излазе предлози; Enter бира означени (први) предлог, ↑/↓ мењају избор, Esc затвара, а „▾“
+    показује цео списак. Текст који није ни на једном предлогу уписује се какав јесте (посао „друго“)."""
+
+    SAVET_BOJA = "#a0a0a0"
+
+    def __init__(self, app, roditelj, predlozi, pocetno: str, upis, savet: str = "", omoguceno: bool = True,
+                 sirina: int = 30):
+        self.app, self.predlozi, self.upis, self.savet = app, list(predlozi), upis, savet
+        self.okvir = tk.Frame(roditelj, background="white")
+        self.v = tk.StringVar()
+        self.e = tk.Entry(self.okvir, textvariable=self.v, width=sirina, relief="flat", font=app.f["osnovni"],
+                          background="#fbfbf7", highlightthickness=1, highlightbackground="#9a9a9a",
+                          highlightcolor=NAGLASAK, disabledbackground="#f1f1f1")
+        self.e.pack(side="left", fill="x", expand=True, ipady=2)
+        self.b = tk.Button(self.okvir, text="▾", relief="flat", background="#eef3f9", cursor="hand2", padx=6,
+                           command=self.prikazi_sve)
+        self.b.pack(side="left", padx=(2, 0))
+        self.popup: tk.Toplevel | None = None
+        self.lb: tk.Listbox | None = None
+        self.stavke: list[str] = []
+        self.mis_u_predlozima = False
+        self.poslednje = pocetno
+        self._postavi(pocetno)
+        if not omoguceno:
+            self.e.configure(state="disabled")
+            self.b.configure(state="disabled")
+        e = self.e
+        e.bind("<FocusIn>", self._ocisti_savet, add="+")
+        e.bind("<KeyRelease>", self.filtriraj)
+        e.bind("<Down>", lambda _e: self.pomeri(1))
+        e.bind("<Up>", lambda _e: self.pomeri(-1))
+        e.bind("<Return>", self.potvrdi)
+        e.bind("<KP_Enter>", self.potvrdi)
+        e.bind("<Escape>", lambda _e: self.zatvori())
+        e.bind("<FocusOut>", lambda _e: e.after(200, self._izlaz), add="+")
+
+    # ---- текст поља
+    def _postavi(self, t: str):
+        state = str(self.e.cget("state"))
+        self.e.configure(state="normal")
+        self.e.delete(0, "end")
+        if t:
+            self.e.insert(0, t)
+            self.e.configure(foreground="#111111")
+        elif self.savet:
+            self.e.insert(0, self.savet)
+            self.e.configure(foreground=self.SAVET_BOJA)
+        self.e.configure(state=state)
+
+    def _ocisti_savet(self, _e=None):
+        if self.e.cget("foreground") == self.SAVET_BOJA and str(self.e.cget("state")) == "normal":
+            self.e.delete(0, "end")
+            self.e.configure(foreground="#111111")
+
+    def tekst(self) -> str:
+        return "" if self.e.cget("foreground") == self.SAVET_BOJA else " ".join(self.v.get().split())
+
+    # ---- предлози
+    def filtriraj(self, dogadjaj=None):
+        if dogadjaj is not None and dogadjaj.keysym in ("Up", "Down", "Return", "KP_Enter", "Escape", "Tab"):
+            return
+        t = self.tekst()
+        stavke = nadji_predloge(t, self.predlozi) if t else []
+        if stavke:
+            self.prikazi(stavke)
+        else:
+            self.zatvori()
+
+    def prikazi_sve(self):
+        if self.popup is not None:
+            self.zatvori()
+            return
+        self._ocisti_savet()
+        self.e.focus_set()
+        self.prikazi(list(self.predlozi))
+
+    def prikazi(self, stavke: list[str]):
+        self.stavke = stavke
+        if self.popup is None:
+            self.popup = tk.Toplevel(self.e, takefocus=0)
+            self.popup.overrideredirect(True)
+            self.lb = tk.Listbox(self.popup, font=self.app.f["osnovni"], activestyle="none", exportselection=False, takefocus=0,
+                                 relief="solid", borderwidth=1, highlightthickness=0, selectbackground="#dbe5f1",
+                                 selectforeground=TEKST, background="white")
+            self.lb.pack(fill="both", expand=True)
+            self.lb.bind("<ButtonRelease-1>", self._klik)
+            # прозор предлога не задржава тастатуру: ако је добије (Windows / X), враћа је пољу
+            self.popup.bind("<FocusIn>", lambda _e: self.e.after_idle(self._vrati_fokus))
+            self.popup.bind("<Enter>", lambda _e: setattr(self, "mis_u_predlozima", True))
+            self.popup.bind("<Leave>", lambda _e: setattr(self, "mis_u_predlozima", False))
+        self.lb.delete(0, "end")
+        for x in stavke:
+            self.lb.insert("end", x)
+        self.lb.configure(height=min(10, len(stavke)))
+        self.lb.selection_clear(0, "end")
+        self.lb.selection_set(0)
+        self.lb.see(0)
+        self.e.update_idletasks()
+        self.popup.geometry(f"{max(self.e.winfo_width(), 260)}x{self.lb.winfo_reqheight()}"
+                            f"+{self.e.winfo_rootx()}+{self.e.winfo_rooty() + self.e.winfo_height()}")
+        self.popup.deiconify()
+        self.popup.lift()
+        # курсор остаје у пољу: списак предлога не сме да преузме тастатуру (иначе се даље куцање и Enter губе)
+        self._vrati_fokus()
+        self.e.after_idle(self._vrati_fokus)
+
+    def _vrati_fokus(self):
+        try:
+            if self.e.winfo_exists():
+                self.e.focus_force()
+                self.e.icursor("end")
+        except tk.TclError:
+            pass
+
+    def zatvori(self):
+        if self.popup is not None:
+            try:
+                self.popup.destroy()
+            except tk.TclError:
+                pass
+        self.popup, self.lb, self.stavke, self.mis_u_predlozima = None, None, [], False
+
+    def otvoren(self) -> bool:
+        return self.popup is not None
+
+    def izabran(self) -> str | None:
+        if not self.lb or not self.stavke:
+            return None
+        sel = self.lb.curselection()
+        return self.stavke[sel[0] if sel else 0]
+
+    def pomeri(self, korak: int):
+        if self.popup is None:
+            self._ocisti_savet()
+            self.prikazi(nadji_predloge(self.tekst(), self.predlozi))
+            return "break"
+        sel = self.lb.curselection()
+        i = max(0, min(len(self.stavke) - 1, (sel[0] if sel else -1) + korak))
+        self.lb.selection_clear(0, "end")
+        self.lb.selection_set(i)
+        self.lb.see(i)
+        return "break"
+
+    def _klik(self, _e):
+        i = self.lb.nearest(_e.y) if self.lb is not None else None
+        if i is not None and 0 <= i < len(self.stavke):
+            self.izaberi(self.stavke[i])
+
+    # ---- упис
+    def potvrdi(self, _e=None):
+        """Enter: означени предлог (први, ако ниједан није означен); без предлога — уписани текст какав јесте."""
+        izbor = self.izabran() if self.otvoren() else None
+        self.izaberi(izbor if izbor is not None else self.tekst())
+        return "break"
+
+    def izaberi(self, naziv: str):
+        self.zatvori()
+        naziv = " ".join(str(naziv or "").split())
+        self._postavi(naziv)
+        if naziv == self.poslednje:
+            return
+        self.poslednje = naziv
+        self.upis(naziv)
+
+    def sacuvaj_ako_treba(self):
+        """Излазак из поља, „Сачувај“, излаз из програма: уписани текст (без избора предлога) уписује се какав јесте."""
+        try:
+            if not self.e.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if self.tekst() != self.poslednje:
+            self.izaberi(self.tekst())
+
+    def _izlaz(self):
+        try:
+            if not self.e.winfo_exists() or self.mis_u_predlozima:
+                return  # клик на предлог бира тај предлог
+            if self.app.koren.focus_get() is self.e:
+                return
+        except (KeyError, tk.TclError):
+            return
+        self.zatvori()
+        self.sacuvaj_ako_treba()
 
 class Ulaz:
     """Сачуване чек-листе, у изгледу Саве (Сислијева „Ливада“ под крем велом): све попуњене чек-листе (Све / У раду /

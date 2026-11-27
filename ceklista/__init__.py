@@ -2,7 +2,7 @@
 и сажетак изабраних података. Питања и правила су иста као у Сави (`pitanja.py` је препис, `logika.py` правила)."""
 
 NAZIV = "Чек-листа"
-VERZIJA_BROJ = "1.5"
+VERZIJA_BROJ = "1.6"
 DATUM_VERZIJE = "27.11.2026"
 VERZIJA = f"{VERZIJA_BROJ} · {DATUM_VERZIJE}"
 PROIZVODJAC = "Slavia Brothers, Geneva"
