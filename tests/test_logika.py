@@ -404,3 +404,21 @@ def test_parafi_ponistavanje(prodaja):
     L.zavrsi(prodaja)
     with pytest.raises(L.GreskaUnosa, match="завршена"):
         L.ponisti_potvrdu(prodaja, "citao")
+
+
+def test_list_23_prati_pravni_posao():
+    """Налог 27.11.2026 (динамичан лист): ставке листа 23.1 о супружницима важе за послове којима се располаже
+    непокретношћу, „Купац првог стана“ само за продају — као сродна питања у Сави."""
+    c = L.nov_list()
+    for posao, vazi, ne_vazi in (
+            ("продаја", {"kupac_prvi_stan", "prodavac_nije_u_braku", "nasledio"}, set()),
+            ("поклон", {"prodavac_nije_u_braku", "nasledio", "motiv"}, {"kupac_prvi_stan", "cena"}),
+            ("доживотно издржавање", {"sup_kupca_dolazi", "dom_iskljucen"}, {"nasledio", "oba_supruznika", "kupac_prvi_stan"}),
+            ("завештање", set(), {"prodavac_nije_u_braku", "susvojina_pola", "kupac_prvi_stan", "nasledio"})):
+        L.postavi_posao(c, posao)
+        for k in vazi:
+            assert stavka(c, k)["primenljivost"] == "da", (posao, k)
+        for k in ne_vazi:
+            assert stavka(c, k)["primenljivost"] == "ne", (posao, k)
+    L.postavi_posao(c, "")
+    assert stavka(c, "susvojina_pola")["primenljivost"] == "nepoznato"  # посао није одређен: за проверу

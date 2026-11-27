@@ -214,8 +214,7 @@ class Aplikacija:
             row=0, column=0, sticky="we", padx=(0, 14))
         ttk.Button(z, text="Сачуване чек-листе", style="Malo.TButton", command=self.na_ulaz).grid(
             row=1, column=0, sticky="we", padx=(0, 14), pady=(4, 0))
-        ttk.Label(z, text=NAZIV, style="Zaglavlje.TLabel", font=self.f["podnaslov"]).grid(row=0, column=1, rowspan=2,
-                                                                                         sticky="w", padx=(0, 18))
+        # наслов програма је у наслову прозора (заглавље је уско на екрану 1366 px)
         ttk.Label(z, text="Предмет / опис", style="Zaglavlje.TLabel").grid(row=0, column=2, sticky="w")
         self.v_naziv = tk.StringVar()
         self.e_naziv = ttk.Entry(z, textvariable=self.v_naziv, width=34)
@@ -465,7 +464,9 @@ class Aplikacija:
         """Шта одређује изглед стране: ако се не промени, освежавају се само ознаке статуса (поље у коме се куца
         остаје, клик на друго питање не губи се)."""
         if self.izbor == LIST:
-            return (LIST, self.st["samo_citanje"])  # остало освежавају делови листа сами (без трептања)
+            # лист се исцртава поново само кад се промени посао или шта на листу важи; остало освежавају делови сами
+            return (LIST, self.st["samo_citanje"], self.st["posao"],
+                    tuple(self._vazi_na_listu(k) for k in list23.KLJUCEVI_LISTA))
         if self.izbor in (LICA, POTVRDE, SAZETAK):
             lica = tuple((x["id"], x["svojstvo"], x["strana"], x["pravno_lice"]) for x in self.st["lica"])
             return (self.izbor, lica, self.st["posao"], repr(self.st["potvrde"]), self.st["samo_citanje"],
@@ -533,7 +534,8 @@ class Aplikacija:
     # ------------------------------------------------------------ лист 23.1 (као на папиру)
     def _strana_lista(self):
         """Лист „Чек листа 23.1“ канцеларије, распоређен као на папиру (list23.py): кућице, линије за упис, КОНТРОЛА
-        Да | Не, парафи. Сваки клик је одговор на исто питање као у детаљним целинама; ништа се не уписује само."""
+        Да | Не. Динамичан по правном послу (правила Саве): називи страна, ставке о супружницима и питања о послу.
+        Сваки клик је одговор на исто питање као у детаљним целинама; ништа се не уписује само."""
         u = self.sadrzaj.unutra
         samo = self.st["samo_citanje"]
         if samo:
@@ -559,7 +561,8 @@ class Aplikacija:
             return r
 
         def tekst(roditelj, t, **kw):
-            w = tk.Label(roditelj, text=t, background=B, foreground="#111111", font=kw.pop("font", F["osnovni"]), **kw)
+            w = tk.Label(roditelj, text=t, background=B, foreground=kw.pop("foreground", "#111111"),
+                         font=kw.pop("font", F["osnovni"]), **kw)
             w.pack(side="left")
             return w
 
@@ -600,89 +603,111 @@ class Aplikacija:
         # 5. ЛК (ставка „Дате су им пор. пријаве“ уклоњена — налог 27.11.2026)
         r = red()
         self._kucica_kljuc(r, "lk_ugovaraca", "Имамо ЛК уговарача и супружника", "да")
-        # 6. Супружници
-        traka_naslov("Супружници")
-        dve = tk.Frame(papir, background=B)
-        dve.pack(fill="x", pady=(0, 6))
-        levo, desno = tk.Frame(dve, background=B), tk.Frame(dve, background=B)
-        levo.pack(side="left", fill="both", expand=True)
-        desno.pack(side="left", fill="both", expand=True, padx=(20, 0))
-        for kolona, naslov in ((levo, "Продавчев супружник"), (desno, "Купчев супружник")):
-            tk.Label(kolona, text=naslov, background=B, font=F["osnovni"]).pack(pady=(0, 6))
-        stavke_levo = ((lambda r: self._kucica_vise(r, "nasledio", "да", "Продавац је наследио / поклон")),
-                       (lambda r: self._kucica_kljuc(r, "prodavac_nije_u_braku", "Продавац није у браку", "да")),
-                       (lambda r: self._kucica_kljuc(r, "sup_prodavca_dolazi", "Супружник долази да да сагласност", "да")),
-                       (lambda r: self._kucica_vise(r, "nasledio", "спб", "Продавац купио пре брака — доказ")),
-                       (lambda r: self._kucica_kljuc(r, "kupac_prihvata_rizik", "Купац прихвата ризик", "да")))
-        stavke_desno = ((lambda r: self._kucica_kljuc(r, "sup_kupca_dolazi", "Супружник долази да да сагласност", "да")),
-                        (lambda r: self._kucica_kljuc(r, "kupac_nije_u_braku", "Купац није у браку", "да")),
-                        (lambda r: self._kucica_kljuc(r, "oba_supruznika", "Купац и његов супружник стичу заједно", "да")),
-                        (lambda r: self._kucica_kljuc(r, "susvojina_pola", "Стичу сусвојину са уделима од по 1/2", "да")),
-                        (lambda r: (tekst(r, "Купац првог стана  ", font=(F["osnovni"][0], F["osnovni"][1], "italic")),
-                                    self._grupa(r, "kupac_prvi_stan", (("Да", "да"), ("Не", "не"))))))
-        for kolona, stavke in ((levo, stavke_levo), (desno, stavke_desno)):
-            for napravi in stavke:
-                r = tk.Frame(kolona, background=B)
-                r.pack(fill="x", pady=3)
-                napravi(r)
-        # 7. Део који се попуњава кад канцеларија прави уговор
+        # 6. Супружници — динамично (налог 27.11.2026): називи страна по правном послу, ставке које за посао не важе
+        #    (по правилима Саве) се не приказују
+        posao = self._vrednost("posao") or ""
+        R, r_gen, Sc, s_gen = list23.ULOGE.get(posao, list23.ULOGE_PAPIR)
+        papir_reci = posao not in list23.ULOGE or posao == "продаја"
+        vazi = self._vazi_na_listu
+        stavke_levo = [
+            ("nasledio", lambda r: self._kucica_vise(r, "nasledio", "да", f"{R} је наследио / поклон")),
+            ("prodavac_nije_u_braku", lambda r: self._kucica_kljuc(r, "prodavac_nije_u_braku", f"{R} није у браку", "да")),
+            ("sup_prodavca_dolazi", lambda r: self._kucica_kljuc(r, "sup_prodavca_dolazi", "Супружник долази да да сагласност", "да")),
+            ("nasledio", lambda r: self._kucica_vise(r, "nasledio", "спб", f"{R} {'купио' if papir_reci else 'стекао'} пре брака — доказ")),
+            ("kupac_prihvata_rizik", lambda r: self._kucica_kljuc(r, "kupac_prihvata_rizik", f"{Sc} прихвата ризик", "да")),
+        ]
+        stavke_desno = [
+            ("sup_kupca_dolazi", lambda r: self._kucica_kljuc(r, "sup_kupca_dolazi", "Супружник долази да да сагласност", "да")),
+            ("kupac_nije_u_braku", lambda r: self._kucica_kljuc(r, "kupac_nije_u_braku", f"{Sc} није у браку", "да")),
+            ("oba_supruznika", lambda r: self._kucica_kljuc(r, "oba_supruznika", f"{Sc} и његов супружник стичу заједно", "да")),
+            ("susvojina_pola", lambda r: self._kucica_kljuc(r, "susvojina_pola", "Стичу сусвојину са уделима од по 1/2", "да")),
+            ("kupac_prvi_stan", lambda r: (tekst(r, "Купац првог стана  ", font=(F["osnovni"][0], F["osnovni"][1], "italic")),
+                                           self._grupa(r, "kupac_prvi_stan", (("Да", "да"), ("Не", "не"))))),
+        ]
+        stavke_levo = [x for x in stavke_levo if vazi(x[0])]
+        stavke_desno = [x for x in stavke_desno if vazi(x[0])]
+        if stavke_levo or stavke_desno:
+            traka_naslov("Супружници")
+            dve = tk.Frame(papir, background=B)
+            dve.pack(fill="x", pady=(0, 6))
+            levo, desno = tk.Frame(dve, background=B), tk.Frame(dve, background=B)
+            levo.pack(side="left", fill="both", expand=True)
+            desno.pack(side="left", fill="both", expand=True, padx=(20, 0))
+            naslovi = ("Продавчев супружник", "Купчев супружник") if papir_reci else (f"Супружник {r_gen}", f"Супружник {s_gen}")
+            for kolona, naslov in zip((levo, desno), naslovi):
+                tk.Label(kolona, text=naslov, background=B, font=F["osnovni"]).pack(pady=(0, 6))
+            for kolona, stavke in ((levo, stavke_levo), (desno, stavke_desno)):
+                for _k, napravi in stavke:
+                    r = tk.Frame(kolona, background=B)
+                    r.pack(fill="x", pady=3)
+                    napravi(r)
+        # 7. Део који се попуњава кад канцеларија прави уговор — по правном послу (Сава: целине „В.“ и „Г.“)
         traka_naslov("Овај део се попуњава само када ми правимо уговор")
-        r = red((0, 6))
-        tekst(r, "Цена")
-        self._linija(r, "cena", 18, "нпр. 85.000")
-        self._valuta(r)
-        r = red((0, 6))
-        tekst(r, "Да ли ће купац на дан закључења уговора у потпуности измирити обавезу исплате кппр. цене?  ")
-        self._grupa(r, "cena_isplacena", (("Да", "да"), ("Не", "не")))
-        self._linija(r, "cena_isplacena" + L.NAPOMENA, 24, "ако не — рок и начин", kljuc_pitanja="cena_isplacena",
-                     napomena=True).pack_configure(fill="x", expand=True, padx=(8, 0))
-        r = red((0, 6))
-        tekst(r, "Да ли је продавац увео купца у посед купљене непокретности?  ")
-        self._grupa(r, "posed_predat", (("Да", "да"), ("Не", "не")))
-        self._linija(r, "posed_predat" + L.NAPOMENA, 24, "ако не — када", kljuc_pitanja="posed_predat",
-                     napomena=True).pack_configure(fill="x", expand=True, padx=(8, 0))
-        r = red((0, 6))
-        tekst(r, "Ко плаћа порез на пренос апсолутних права?  ")
-        self._grupa(r, "porez_snosi", (("Продавац", "продавац"), ("Купац", "купац")))
-        r = red((0, 12))
-        tekst(r, "Ако је у питању уговор о поклону — МОТИВ:  ")
-        self._linija(r, "motiv", 40).pack_configure(fill="x", expand=True)
+        if not posao or posao == "друго":
+            r = red((0, 12))
+            tekst(r, "Изаберите правни посао горе — овде се тада појављују питања за тај посао.", foreground="#777777",
+                  font=F["kosi"])
+        elif posao == "продаја":
+            r = red((0, 6))
+            tekst(r, "Цена")
+            self._linija(r, "cena", 18, "нпр. 85.000")
+            self._valuta(r)
+            r = red((0, 6))
+            tekst(r, "Да ли ће купац на дан закључења уговора у потпуности измирити обавезу исплате кппр. цене?  ")
+            self._grupa(r, "cena_isplacena", (("Да", "да"), ("Не", "не")))
+            self._linija(r, "cena_isplacena" + L.NAPOMENA, 24, "ако не — рок и начин", kljuc_pitanja="cena_isplacena",
+                         napomena=True).pack_configure(fill="x", expand=True, padx=(8, 0))
+            r = red((0, 6))
+            tekst(r, "Да ли је продавац увео купца у посед купљене непокретности?  ")
+            self._grupa(r, "posed_predat", (("Да", "да"), ("Не", "не")))
+            self._linija(r, "posed_predat" + L.NAPOMENA, 24, "ако не — када", kljuc_pitanja="posed_predat",
+                         napomena=True).pack_configure(fill="x", expand=True, padx=(8, 0))
+            r = red((0, 12))
+            tekst(r, "Ко плаћа порез на пренос апсолутних права?  ")
+            self._grupa(r, "porez_snosi", (("Продавац", "продавац"), ("Купац", "купац")))
+        else:
+            posebna = [k for k in list23.POSEBNO_ZA_POSAO if vazi(k)]
+            for k in posebna:
+                self._pitanje_na_listu(red((0, 6)), k)
+            if not posebna:
+                r = red((0, 12))
+                tekst(r, f"За посао „{posao}“ нема посебних питања на листу (остала су у детаљним питањима).",
+                      foreground="#777777", font=F["kosi"])
+            else:
+                red((0, 6))
         # 8. Парафи контроле и паковања (сличице оловке и списа на листу)
         r = red((4, 12))
         self._paraf_kucica(r, "kontrola", "✎  Контрола извршена")
         tk.Frame(r, width=30, background=B).pack(side="left")
         self._paraf_kucica(r, "spakovan", "▤  Предмет физички спакован")
-        # 9. КОНТРОЛА и парафи десно
-        blok = tk.Frame(papir, background=B)
-        blok.pack(fill="x")
-        tabela = tk.Frame(blok, background=B)
-        tabela.pack(side="left", anchor="n")
+        # 9. КОНТРОЛА (парафи десно, „Нема документације…“, „Ко је сачинио исправу“ и „Важно!!!“ уклоњени са листа —
+        #    налог 27.11.2026; парафи су на страни „Парафи“, а та питања у детаљним целинама)
+        tabela = tk.Frame(papir, background=B)
+        tabela.pack(anchor="w")
         for i, (naslov, kljuc, levo_, desno_) in enumerate(list23.KONTROLA):
             tk.Label(tabela, text=("КОНТРОЛА — " if i == 0 else "") + naslov, background=B, anchor="e",
                      font=F["jaki"] if i == 0 else F["osnovni"]).grid(row=i, column=0, sticky="e", padx=(0, 4))
             for j, (natpis, vrednost) in enumerate((levo_, desno_)):
                 self._celija(tabela, kljuc, natpis, vrednost, levo=j == 0).grid(row=i, column=1 + j, sticky="nsew")
-        desno = tk.Frame(blok, background=B)
-        desno.pack(side="left", fill="both", expand=True, padx=(28, 0), anchor="n")
-        self._paraf_linija(desno, "primio", "Предмет сам примила/о и преконтролисала/о")
-        r = tk.Frame(desno, background=B)
-        r.pack(fill="x", pady=(10, 10))
-        self._kucica_kljuc(r, "dok_za_vracanje", "Нема документације која се враћа", "НЕ")
-        self._paraf_linija(desno, "dokumentacija", "Потврђујем да ми је ВРАЋЕНА сва документација — Налепница")
-        self._paraf_linija(desno, "spremno", "Потврђујем да сам предмет спремила/о у целости и да може да иде на читање")
-        # 10. Ко је сачинио исправу; Важно (парафи после броја)
-        r = red((18, 6))
-        tekst(r, "Ко је сачинио исправу?  ", font=F["jaki"])
-        self._grupa(r, "sacinio_list", (("Ми", "ми"), ("Адвокат", "адвокат"), ("Агенција", "агенција"), ("Геометар", "геометар")))
-        self._linija(r, "sacinio_list_drugo", 18).pack_configure(fill="x", expand=True)
-        traka_naslov("Важно!!!", boja="#d9d9d9")
-        vazno = tk.Frame(papir, background=B)
-        vazno.pack(fill="x")
-        for j, (k, naziv) in enumerate((("citao", "Читао"), ("pis", "Унео у ПИС"), ("plava", "у Плаву"), ("aa", "а/а"))):
-            vazno.columnconfigure(j, weight=1, uniform="vazno")
-            tk.Label(vazno, text=naziv, background=B, font=F["jaki"], relief="solid", borderwidth=1).grid(
-                row=0, column=j, sticky="nsew")
-            self._paraf_celija(vazno, k).grid(row=1, column=j, sticky="nsew")
+
+    def _vazi_na_listu(self, kljuc: str) -> bool:
+        """Ставка листа се приказује кад за изабрани посао важи или је „за проверу“ (правила Саве); ставка која зависи
+        од другог одговора („Шта се преноси?“ после „Преносе се и средства — Да“) појављује се тек после тог одговора."""
+        s = L.nadji(self.st, kljuc)
+        return s is not None and s["primenljivost"] in ("da", "nepoznato")
+
+    def _pitanje_na_listu(self, r, kljuc: str):
+        """Питање Саве на листу, по врсти: да / не и избор — кућице; више избора — кућице; текст — линија."""
+        q = L.OPSTA[kljuc][1]
+        tk.Label(r, text=q["t"] + ("?  " if q["tip"] in ("tri", "izbor", "vise") else ":  "), background="white",
+                 foreground="#111111", font=self.f["osnovni"]).pack(side="left")
+        if q["tip"] in ("tri", "izbor"):
+            self._grupa(r, kljuc, [(x.capitalize() if x in ("да", "не") else x, x) for x in L.opcije(q)])
+        elif q["tip"] == "vise":
+            for x in L.opcije(q):
+                self._kucica_vise(r, kljuc, x, x)
+        else:
+            self._linija(r, kljuc, 40).pack_configure(fill="x", expand=True)
 
     # ---- делови листа
     # Лист се НЕ исцртава поново после клика (налог 27.11.2026: „апликација трепне“): сваки део листа има функцију
@@ -912,38 +937,6 @@ class Aplikacija:
     def _paraf_kucica(self, roditelj, k: str, natpis: str):
         return self._kucica(roditelj, natpis, lambda: bool((self.c.get("potvrde") or {}).get(k)), lambda: self.parafiraj(k),
                             dodatak=lambda: self._paraf_tekst(k))
-
-    def _paraf_linija(self, roditelj, k: str, natpis: str):
-        tk.Label(roditelj, text=natpis, background="white", font=self.f["jaki"], wraplength=360, justify="center").pack(
-            fill="x", pady=(8, 0))
-        self._paraf_celija(roditelj, k, crta=True).pack(fill="x")
-
-    def _paraf_celija(self, roditelj, k: str, crta: bool = False):
-        """„парафирај“ / „✓ име, време“: клик парафира, поновни клик поништава параф (налог 27.11.2026: без питања)."""
-        okvir = None
-        if crta:
-            okvir = tk.Frame(roditelj, background="white")
-            roditelj = okvir
-        w = tk.Label(roditelj, background="white", font=self.f["mali"], pady=4, relief="flat" if crta else "solid",
-                     borderwidth=0 if crta else 1)
-
-        def osvezi():
-            tekst = self._paraf_tekst(k)
-            if tekst:
-                w.configure(text=tekst, foreground="#2f6b3d", cursor="hand2" if not self.st["samo_citanje"] else "")
-            elif self.st["samo_citanje"]:
-                w.configure(text=" ", cursor="")
-            else:
-                w.configure(text="парафирај", foreground="#2c6aa0", cursor="hand2")
-
-        w.bind("<Button-1>", lambda _e: self.parafiraj(k) if not self.st["samo_citanje"] else None)
-        osvezi()
-        self._osvezivaci.append(osvezi)
-        if okvir is not None:
-            w.pack(fill="x")
-            tk.Frame(okvir, background="#555555", height=1).pack(fill="x")
-            return okvir
-        return w
 
     # ------------------------------------------------------------ странке
     def _strana_lica(self):
